@@ -130,3 +130,48 @@ export async function deleteDocument(userId: string, botId: string, documentId: 
 
   return { ok: true }
 }
+
+export async function retryDocument(userId: string, botId: string, documentId: string) {
+  await getBot(userId, botId)
+  const { data: doc, error } = await supabaseAdmin
+    .from('documents')
+    .select('*')
+    .eq('id', documentId)
+    .eq('bot_id', botId)
+    .maybeSingle()
+
+  if (error) throw httpError(500, error.message)
+  if (!doc) throw httpError(404, 'Document not found')
+  if (doc.status !== 'failed') {
+    throw httpError(400, 'Only failed documents can be retried')
+  }
+
+  const { data: file, error: downloadError } = await supabaseAdmin.storage
+    .from('documents')
+    .download(doc.storage_path)
+
+  if (downloadError || !file) {
+    throw httpError(500, downloadError?.message || 'Could not download original file')
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  await supabaseAdmin.from('chunks').delete().eq('document_id', documentId)
+  await supabaseAdmin
+    .from('documents')
+    .update({ status: 'processing', error_message: null })
+    .eq('id', documentId)
+
+  try {
+    await ingestDocument(doc.id, botId, doc.filename, buffer)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Ingest failed'
+    await supabaseAdmin
+      .from('documents')
+      .update({ status: 'failed', error_message: message })
+      .eq('id', documentId)
+    throw httpError(500, message)
+  }
+
+  const { data: refreshed } = await supabaseAdmin.from('documents').select('*').eq('id', doc.id).single()
+  return refreshed
+}

@@ -9,8 +9,9 @@ import { DropZone } from '../components/DropZone'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { getErrorMessage, isPlanLimitError, PlanLimitNotice } from '../components/PlanLimitNotice'
+import { WidgetInbox } from '../components/WidgetInbox'
 
-type Tab = 'docs' | 'chat' | 'embed' | 'settings'
+type Tab = 'docs' | 'chat' | 'inbox' | 'embed' | 'settings'
 
 type PendingDelete =
   | { type: 'doc'; id: string; name: string }
@@ -33,6 +34,7 @@ export function BotDetailPage() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null)
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
 
   async function load() {
     try {
@@ -126,6 +128,27 @@ export function BotDetailPage() {
     }
   }
 
+  async function retryDoc(id: string, name: string) {
+    setRetryingId(id)
+    setLimitError(null)
+    setError(null)
+    const toastId = toast.info('Retrying…', name, { id: `retry-${id}` })
+    try {
+      await api(`/v1/bots/${botId}/documents/${id}/retry`, { method: 'POST' })
+      await load()
+      toast.dismiss(toastId)
+      toast.success('Ready', `${name} was reprocessed.`)
+    } catch (err) {
+      const message = getErrorMessage(err, 'Retry failed')
+      toast.dismiss(toastId)
+      if (isPlanLimitError(err)) setLimitError(message)
+      else toast.error('Retry failed', message)
+      await load()
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
   async function publishNow() {
     if (!bot) return
     setPublishing(true)
@@ -174,6 +197,7 @@ export function BotDetailPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'docs', label: 'Documents' },
     { id: 'chat', label: 'Playground' },
+    { id: 'inbox', label: 'Inbox' },
     { id: 'embed', label: 'Embed' },
     { id: 'settings', label: 'Settings' },
   ]
@@ -264,13 +288,25 @@ export function BotDetailPage() {
                     </td>
                     <td className="px-4 py-3 text-ink/55">{(d.bytes / 1024).toFixed(1)} KB</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-red-600 hover:underline"
-                        onClick={() => setPendingDelete({ type: 'doc', id: d.id, name: d.filename })}
-                      >
-                        Delete
-                      </button>
+                      <div className="flex justify-end gap-3">
+                        {d.status === 'failed' ? (
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-teal hover:underline disabled:opacity-50"
+                            disabled={retryingId === d.id}
+                            onClick={() => void retryDoc(d.id, d.filename)}
+                          >
+                            {retryingId === d.id ? 'Retrying…' : 'Retry'}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-red-600 hover:underline"
+                          onClick={() => setPendingDelete({ type: 'doc', id: d.id, name: d.filename })}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -294,6 +330,12 @@ export function BotDetailPage() {
             hasReadyDocs={hasReadyDocs}
             onGoToDocs={() => setTab('docs')}
           />
+        </div>
+      ) : null}
+
+      {tab === 'inbox' ? (
+        <div className="kb-rise kb-rise-1">
+          <WidgetInbox botId={botId} />
         </div>
       ) : null}
 

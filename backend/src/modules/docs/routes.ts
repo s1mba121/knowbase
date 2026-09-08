@@ -38,4 +38,9 @@ export async function docsRoutes(app: FastifyInstance) {
     const { botId, documentId } = request.params as { botId: string; documentId: string }
     return docs.deleteDocument(request.user.id, botId, documentId)
   })
+
+  app.post('/:botId/documents/:documentId/retry', async (request) => {
+    const { botId, documentId } = request.params as { botId: string; documentId: string }
+    return docs.retryDocument(request.user.id, botId, documentId)
+  })
 }

@@ -3,6 +3,7 @@ type WidgetConfig = {
   welcome_message: string
   primary_color: string
   watermark: boolean
+  suggestions?: string[]
 }
 
 type ChatSource = {
@@ -142,6 +143,12 @@ async function main() {
     .kb-form input { flex: 1; border: 1px solid #d5e0dc; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; }
     .kb-form button { border: none; border-radius: 10px; padding: 0 14px; color: #fff; font-weight: 600; cursor: pointer; background: var(--kb); }
     .kb-water { font-size: 10px; text-align: center; padding: 4px; color: #89a; background: #f6faf8; }
+    .kb-sugs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+    .kb-sug {
+      border: 1px solid #d7e3df; background: #fff; color: #234; border-radius: 999px;
+      padding: 6px 10px; font-size: 11px; cursor: pointer; line-height: 1.2;
+    }
+    .kb-sug:hover { border-color: var(--kb); color: #000; }
   `
   document.head.appendChild(style)
 
@@ -161,6 +168,33 @@ async function main() {
   panel.style.display = 'none'
   panel.style.setProperty('--kb', config.primary_color)
   root.appendChild(panel)
+
+  async function ask(text: string) {
+    if (!text.trim()) return
+    messages.push({ role: 'user', content: text.trim() })
+    render()
+    try {
+      const res = await fetch(`${apiBase}/v1/widget/${botKey}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text.trim(),
+          conversation_id: conversationId,
+          visitor_id: visitorId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Chat failed')
+      conversationId = data.conversation_id
+      messages.push({ role: 'assistant', content: data.answer, sources: data.sources })
+    } catch (err) {
+      messages.push({
+        role: 'assistant',
+        content: err instanceof Error ? err.message : 'Something went wrong',
+      })
+    }
+    render()
+  }
 
   function render() {
     panel.innerHTML = ''
@@ -191,6 +225,22 @@ async function main() {
       }
       body.appendChild(el)
     })
+
+    const onlyWelcome = messages.length === 1 && messages[0]?.role === 'assistant'
+    if (onlyWelcome && config.suggestions?.length) {
+      const sugs = document.createElement('div')
+      sugs.className = 'kb-sugs'
+      config.suggestions.slice(0, 3).forEach((q) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'kb-sug'
+        b.textContent = q
+        b.addEventListener('click', () => void ask(q))
+        sugs.appendChild(b)
+      })
+      body.appendChild(sugs)
+    }
+
     panel.appendChild(body)
 
     if (config.watermark) {
@@ -213,30 +263,7 @@ async function main() {
       const text = input.value.trim()
       if (!text) return
       input.value = ''
-      messages.push({ role: 'user', content: text })
-      render()
-      body.scrollTop = body.scrollHeight
-      try {
-        const res = await fetch(`${apiBase}/v1/widget/${botKey}/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: text,
-            conversation_id: conversationId,
-            visitor_id: visitorId,
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Chat failed')
-        conversationId = data.conversation_id
-        messages.push({ role: 'assistant', content: data.answer, sources: data.sources })
-      } catch (err) {
-        messages.push({
-          role: 'assistant',
-          content: err instanceof Error ? err.message : 'Something went wrong',
-        })
-      }
-      render()
+      await ask(text)
     })
     panel.appendChild(form)
     body.scrollTop = body.scrollHeight

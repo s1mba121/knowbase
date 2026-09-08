@@ -21,6 +21,11 @@ export async function widgetRoutes(app: FastifyInstance) {
       welcome_message: bot.welcome_message,
       primary_color: plan.branding ? bot.primary_color : '#0F766E',
       watermark: plan.watermark,
+      suggestions: [
+        'How do I get started?',
+        'What are the main features?',
+        'Where can I find pricing info?',
+      ],
     }
   })
 
