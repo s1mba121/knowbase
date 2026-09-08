@@ -101,6 +101,38 @@ body {
   }
 }
 
+@keyframes kb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes kb-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@keyframes kb-toast-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .kb-rise {
   animation: kb-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -207,13 +239,29 @@ body {
   animation: kb-auth-copy 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.kb-toast {
+  animation: kb-toast-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.kb-toast-out {
+  animation: kb-toast-out 0.28s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+.kb-toast-pulse {
+  animation: kb-toast-pulse 1.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kb-rise,
   .kb-float,
   .kb-drift,
   .kb-bubble-in,
   .kb-typing-dot,
-  .kb-auth-copy {
+  .kb-auth-copy,
+  .kb-toast,
+  .kb-toast-out,
+  .kb-toast-pulse {
     animation: none !important;
   }
 

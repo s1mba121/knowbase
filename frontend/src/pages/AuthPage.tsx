@@ -179,7 +179,7 @@ export function AuthPage() {
         <>
           <ul className="mt-10 space-y-4 border-t border-line/70 pt-8">
             {[
-              ['Upload knowledge', 'PDF, Markdown, or TXT from your docs'],
+              ['Upload knowledge', 'PDF, DOCX, Markdown, TXT, HTML, or CSV'],
               ['Cited answers', 'Every reply can point to a source chunk'],
               ['Embed anywhere', 'One script tag for your website'],
             ].map(([t, body]) => (

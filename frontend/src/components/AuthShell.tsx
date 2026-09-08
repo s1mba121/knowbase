@@ -68,7 +68,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
             </p>
 
             <div className="mt-7 flex flex-wrap gap-2">
-              {['PDF', 'Markdown', 'Playground', 'Widget'].map((tag) => (
+              {['PDF', 'DOCX', 'Markdown', 'Widget'].map((tag) => (
                 <span
                   key={tag}
                   className="rounded-full border border-white/15 bg-white/[0.04] px-3 py-1 text-xs text-white/55"

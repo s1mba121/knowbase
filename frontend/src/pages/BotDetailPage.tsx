@@ -6,12 +6,20 @@ import { useAuth } from '../lib/auth'
 import { Badge, Button, Input, TextArea } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
 import { DropZone } from '../components/DropZone'
+import { useToast } from '../components/Toast'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 type Tab = 'docs' | 'chat' | 'embed' | 'settings'
+
+type PendingDelete =
+  | { type: 'doc'; id: string; name: string }
+  | { type: 'bot' }
+  | null
 
 export function BotDetailPage() {
   const { botId = '' } = useParams()
   const { me, refreshMe } = useAuth()
+  const toast = useToast()
   const [bot, setBot] = useState<Bot | null>(null)
   const [docs, setDocs] = useState<DocumentRow[]>([])
   const [tab, setTab] = useState<Tab>('docs')
@@ -19,6 +27,8 @@ export function BotDetailPage() {
   const [snippet, setSnippet] = useState('')
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null)
+  const [deleting, setDeleting] = useState(false)
 
   async function load() {
     try {
@@ -42,22 +52,37 @@ export function BotDetailPage() {
   async function onUpload(file: File) {
     setUploading(true)
     setError(null)
+    const toastId = toast.info('Uploading…', file.name, { id: `upload-${file.name}` })
     try {
       const fd = new FormData()
       fd.append('file', file)
       await api(`/v1/bots/${botId}/documents`, { method: 'POST', formData: fd })
       await load()
       await refreshMe()
+      toast.dismiss(toastId)
+      toast.success('Uploaded', `${file.name} is ready in your knowledge base.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      const message = err instanceof Error ? err.message : 'Upload failed'
+      setError(message)
+      toast.dismiss(toastId)
+      toast.error('Upload failed', message)
     } finally {
       setUploading(false)
     }
   }
 
-  async function removeDoc(id: string) {
-    await api(`/v1/bots/${botId}/documents/${id}`, { method: 'DELETE' })
-    setDocs((prev) => prev.filter((d) => d.id !== id))
+  async function removeDoc(id: string, name: string) {
+    setDeleting(true)
+    try {
+      await api(`/v1/bots/${botId}/documents/${id}`, { method: 'DELETE' })
+      setDocs((prev) => prev.filter((d) => d.id !== id))
+      setPendingDelete(null)
+      toast.success('Deleted', name)
+    } catch (err) {
+      toast.error('Delete failed', err instanceof Error ? err.message : 'Could not delete document')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function saveSettings(e: FormEvent<HTMLFormElement>) {
@@ -88,9 +113,14 @@ export function BotDetailPage() {
   }
 
   async function deleteBot() {
-    if (!confirm('Delete this bot and all documents?')) return
-    await api(`/v1/bots/${botId}`, { method: 'DELETE' })
-    window.location.href = '/app'
+    setDeleting(true)
+    try {
+      await api(`/v1/bots/${botId}`, { method: 'DELETE' })
+      window.location.href = '/app'
+    } catch (err) {
+      toast.error('Delete failed', err instanceof Error ? err.message : 'Could not delete bot')
+      setDeleting(false)
+    }
   }
 
   if (!bot) {
@@ -188,10 +218,7 @@ export function BotDetailPage() {
                       <button
                         type="button"
                         className="text-xs text-red-600 hover:underline"
-                        onClick={() => {
-                          if (!confirm(`Delete ${d.filename}?`)) return
-                          void removeDoc(d.id)
-                        }}
+                        onClick={() => setPendingDelete({ type: 'doc', id: d.id, name: d.filename })}
                       >
                         Delete
                       </button>
@@ -266,12 +293,45 @@ export function BotDetailPage() {
             <Button type="submit" disabled={saving}>
               {saving ? 'Saving…' : 'Save settings'}
             </Button>
-            <Button type="button" variant="danger" onClick={() => void deleteBot()}>
+            <Button type="button" variant="danger" onClick={() => setPendingDelete({ type: 'bot' })}>
               Delete bot
             </Button>
           </div>
         </form>
       ) : null}
+
+      <ConfirmDialog
+        open={pendingDelete?.type === 'doc'}
+        title="Delete document?"
+        body={
+          pendingDelete?.type === 'doc' ? (
+            <>
+              <span className="font-medium text-ink">{pendingDelete.name}</span> will be removed from
+              this bot’s knowledge base.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete"
+        busy={deleting}
+        onCancel={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        onConfirm={() => {
+          if (pendingDelete?.type === 'doc') void removeDoc(pendingDelete.id, pendingDelete.name)
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete?.type === 'bot'}
+        title="Delete this bot?"
+        body="This removes the bot and all of its documents. This can’t be undone."
+        confirmLabel="Delete bot"
+        busy={deleting}
+        onCancel={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        onConfirm={() => void deleteBot()}
+      />
     </div>
   )
 }

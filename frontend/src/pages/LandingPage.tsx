@@ -101,7 +101,7 @@ export function LandingPage() {
                 {
                   step: '01',
                   title: 'Upload knowledge',
-                  body: 'Drop PDF, Markdown, or TXT from your docs. We extract, chunk, and embed automatically.',
+                  body: 'Drop PDF, DOCX, Markdown, TXT, HTML, or CSV. We extract, chunk, and embed automatically.',
                 },
                 {
                   step: '02',

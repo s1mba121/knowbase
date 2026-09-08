@@ -8,36 +8,52 @@ type DropZoneProps = {
   hint?: string
 }
 
-const DEFAULT_ACCEPT = '.pdf,.txt,.md,.markdown,text/plain,application/pdf'
+const EXTENSIONS = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.html', '.htm', '.csv'] as const
+
+const MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'text/markdown',
+  'text/html',
+  'text/csv',
+  'application/csv',
+])
+
+const DEFAULT_ACCEPT = [
+  ...EXTENSIONS,
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'text/markdown',
+  'text/html',
+  'text/csv',
+].join(',')
+
+const FORMATS_HINT = 'PDF, DOCX, Markdown, TXT, HTML, CSV · max 20 MB'
+const FORMATS_ERROR = 'Unsupported file type. Upload PDF, DOCX, Markdown, TXT, HTML, or CSV.'
 
 export function DropZone({
   disabled,
   busy,
   accept = DEFAULT_ACCEPT,
   onFile,
-  hint = 'PDF, TXT, or Markdown · max 20 MB',
+  hint = FORMATS_HINT,
 }: DropZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
   function isAllowed(file: File) {
     const name = file.name.toLowerCase()
-    return (
-      name.endsWith('.pdf') ||
-      name.endsWith('.txt') ||
-      name.endsWith('.md') ||
-      name.endsWith('.markdown') ||
-      file.type === 'application/pdf' ||
-      file.type === 'text/plain' ||
-      file.type === 'text/markdown'
-    )
+    if (EXTENSIONS.some((ext) => name.endsWith(ext))) return true
+    return MIME_TYPES.has(file.type)
   }
 
   function handleFiles(list: FileList | null) {
     const file = list?.[0]
     if (!file) return
     if (!isAllowed(file)) {
-      alert('Unsupported file type. Upload PDF, TXT, or Markdown.')
+      alert(FORMATS_ERROR)
       return
     }
     onFile(file)
