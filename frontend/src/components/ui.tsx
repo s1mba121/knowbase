@@ -56,10 +56,28 @@ export function TextArea({
   )
 }
 
-export function BrandMark({ className = '' }: { className?: string }) {
+export function BrandMark({
+  className = '',
+  tone = 'light',
+}: {
+  className?: string
+  tone?: 'light' | 'dark'
+}) {
+  const dark = tone === 'dark'
   return (
-    <Link to="/" className={`inline-flex items-center gap-2 font-display text-xl tracking-tight ${className}`}>
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-teal text-sm font-bold text-white">K</span>
+    <Link
+      to="/"
+      className={`inline-flex items-center gap-2 font-display text-xl tracking-tight ${
+        dark ? 'text-white' : 'text-ink'
+      } ${className}`}
+    >
+      <span
+        className={`grid h-8 w-8 place-items-center rounded-lg text-sm font-bold ${
+          dark ? 'bg-white text-teal-dark' : 'bg-teal text-white'
+        }`}
+      >
+        K
+      </span>
       Knowbase
     </Link>
   )

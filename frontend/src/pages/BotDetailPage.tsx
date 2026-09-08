@@ -5,6 +5,7 @@ import type { Bot, DocumentRow } from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { Badge, Button, Input, TextArea } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
+import { DropZone } from '../components/DropZone'
 
 type Tab = 'docs' | 'chat' | 'embed' | 'settings'
 
@@ -136,20 +137,25 @@ export function BotDetailPage() {
 
       {tab === 'docs' ? (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-line bg-white/80 p-5">
+          <div>
             <h2 className="font-semibold">Upload knowledge</h2>
-            <p className="mt-1 text-sm text-ink/55">PDF, TXT, or Markdown. Processing starts immediately.</p>
-            <input
-              type="file"
-              accept=".pdf,.txt,.md,.markdown,text/plain,application/pdf"
-              className="mt-4 block w-full text-sm"
-              disabled={uploading}
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) void onUpload(f)
-              }}
-            />
-            {uploading ? <p className="mt-2 text-xs text-ink/50">Uploading & embedding…</p> : null}
+            <p className="mt-1 text-sm text-ink/55">
+              Drop a help article to train this bot. Processing starts immediately.
+            </p>
+            <div className="mt-4">
+              <DropZone busy={uploading} onFile={(file) => void onUpload(file)} />
+            </div>
+            <p className="mt-3 text-xs text-ink/45">
+              Tip: try{' '}
+              <a
+                href="/sample-docs/getting-started.md"
+                download
+                className="font-medium text-teal hover:underline"
+              >
+                getting-started.md
+              </a>{' '}
+              from the sample docs.
+            </p>
           </div>
           <div className="overflow-hidden rounded-2xl border border-line bg-white">
             <table className="w-full text-left text-sm">
@@ -182,7 +188,10 @@ export function BotDetailPage() {
                       <button
                         type="button"
                         className="text-xs text-red-600 hover:underline"
-                        onClick={() => void removeDoc(d.id)}
+                        onClick={() => {
+                          if (!confirm(`Delete ${d.filename}?`)) return
+                          void removeDoc(d.id)
+                        }}
                       >
                         Delete
                       </button>
