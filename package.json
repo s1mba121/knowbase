@@ -1,0 +1,21 @@
+{
+  "name": "knowbase",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Knowbase — docs to embeddable chatbot (fullstack MVP)",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:web": "npm run dev -w knowbase-frontend",
+    "dev:api": "npm run dev -w knowbase-backend",
+    "build": "npm run build -w knowbase-frontend && npm run build:widget -w knowbase-frontend && npm run build -w knowbase-backend",
+    "build:widget": "npm run build:widget -w knowbase-frontend",
+    "typecheck": "npm run typecheck -w knowbase-backend --if-present && npm run build -w knowbase-frontend --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

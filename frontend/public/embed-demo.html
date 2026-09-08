@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Knowbase embed demo</title>
+    <style>
+      body {
+        font-family: Georgia, serif;
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(160deg, #1a2e28, #0c1a17);
+        color: #e8f2ef;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 64px 24px;
+      }
+      h1 {
+        font-size: 2.5rem;
+      }
+      p {
+        line-height: 1.6;
+        opacity: 0.85;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Acme Docs site</h1>
+      <p>
+        This page simulates a customer website. Replace
+        <code>pk_YOUR_KEY</code> below with your published bot public key, then open the chat bubble.
+      </p>
+    </main>
+    <!-- Replace pk_YOUR_KEY after publishing a bot -->
+    <script
+      src="http://localhost:3001/widget.js"
+      data-bot-key="pk_YOUR_KEY"
+      data-api="http://localhost:3001"
+      async
+    ></script>
+  </body>
+</html>
