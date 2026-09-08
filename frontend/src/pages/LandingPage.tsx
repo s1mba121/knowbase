@@ -7,7 +7,7 @@ import { HeroChatDemo } from '../components/HeroChatDemo'
 export function LandingPage() {
   const { session, loading } = useAuth()
   const signedIn = !loading && !!session
-  const ctaTo = signedIn ? '/app' : '/login'
+  const ctaTo = signedIn ? '/app' : '/auth?mode=signup'
 
   return (
     <div className="kb-page min-h-screen overflow-x-hidden text-ink">
@@ -44,12 +44,12 @@ export function LandingPage() {
             ) : (
               <>
                 <Link
-                  to="/login"
+                  to="/auth"
                   className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink/65 transition hover:bg-white/70 hover:text-ink sm:inline-block"
                 >
                   Sign in
                 </Link>
-                <Link to="/login">
+                <Link to="/auth?mode=signup">
                   <Button>Start free</Button>
                 </Link>
               </>
@@ -206,7 +206,7 @@ export function LandingPage() {
                     </li>
                   ))}
                 </ul>
-                <Link to={signedIn ? '/app/billing' : '/login'} className="mt-8 block">
+                <Link to={signedIn ? '/app/billing' : '/auth?mode=signup'} className="mt-8 block">
                   <Button
                     variant={plan.featured ? 'primary' : 'secondary'}
                     className={`w-full ${plan.featured ? 'bg-teal hover:bg-teal-dark' : ''}`}

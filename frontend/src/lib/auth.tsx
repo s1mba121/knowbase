@@ -43,14 +43,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
+      // Avoid hammering /me during recovery before password is set
+      if (event === 'PASSWORD_RECOVERY') {
+        setMe(null)
+      }
     })
     return () => sub.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (session) {
+      // Skip profile fetch on recovery-only pages until user finishes reset
+      if (window.location.pathname === '/reset-password') return
       void refreshMe()
     } else {
       setMe(null)

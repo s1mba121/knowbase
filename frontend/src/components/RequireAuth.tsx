@@ -8,6 +8,6 @@ export function RequireAuth() {
       <div className="grid min-h-screen place-items-center text-sm text-ink/60">Loading…</div>
     )
   }
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) return <Navigate to="/auth" replace />
   return <Outlet />
 }

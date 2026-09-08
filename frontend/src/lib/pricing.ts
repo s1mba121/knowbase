@@ -38,7 +38,7 @@ export const PLANS_COPY = [
       '200 docs · 200 MB',
       '10,000 messages / month',
       'Custom branding',
-      'Priority-ready limits',
+      'Higher usage limits',
     ],
   },
 ] as const

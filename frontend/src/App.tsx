@@ -3,7 +3,8 @@ import { AuthProvider } from './lib/auth'
 import { RequireAuth } from './components/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { LandingPage } from './pages/LandingPage'
-import { LoginPage } from './pages/LoginPage'
+import { AuthPage } from './pages/AuthPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { BotDetailPage } from './pages/BotDetailPage'
 import { BillingPage } from './pages/BillingPage'
@@ -14,7 +15,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/login" element={<Navigate to="/auth" replace />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route element={<RequireAuth />}>
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />

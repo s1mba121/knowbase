@@ -77,7 +77,7 @@ npm run build:widget
 2. Upload [`frontend/sample-docs/getting-started.md`](frontend/sample-docs/getting-started.md).
 3. Playground → ask a question (answers include source citations + Markdown).
 4. Settings → publish → copy embed snippet.
-5. Billing → Simulate plan, or Stripe test Checkout (`4242…`).
+5. Billing → Stripe test Checkout (`4242…`).
 
 Embed smoke test: open http://localhost:5173/embed-demo.html with your `pk_…` key.
 

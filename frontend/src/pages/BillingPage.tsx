@@ -3,11 +3,10 @@ import { useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PLANS_COPY } from '../lib/pricing'
-import type { PlanId } from '../lib/types'
-import { Button } from '../components/ui'
+import { Badge, Button } from '../components/ui'
 
 export function BillingPage() {
-  const { me, refreshMe } = useAuth()
+  const { me } = useAuth()
   const [params] = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -41,31 +40,18 @@ export function BillingPage() {
     }
   }
 
-  async function demoPlan(plan: PlanId) {
-    setBusy(plan)
-    setError(null)
-    try {
-      await api('/v1/billing/demo-plan', {
-        method: 'POST',
-        body: JSON.stringify({ plan }),
-      })
-      await refreshMe()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set demo plan')
-    } finally {
-      setBusy(null)
-    }
-  }
-
   const usagePct = me
     ? Math.min(100, Math.round((me.usage.messagesUsed / Math.max(me.usage.messagesLimit, 1)) * 100))
     : 0
+  const onPaid = me?.subscription.plan !== 'free'
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-display text-4xl">Billing</h1>
-        <p className="mt-1 text-sm text-ink/60">Manage plan, usage, and Stripe subscription.</p>
+      <div className="kb-rise max-w-lg">
+        <h1 className="font-display text-3xl tracking-tight sm:text-4xl">Billing</h1>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink/55">
+          Manage plan, usage, and your Stripe subscription.
+        </p>
       </div>
 
       {params.get('success') ? (
@@ -78,18 +64,23 @@ export function BillingPage() {
           Checkout canceled.
         </p>
       ) : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+      ) : null}
 
       {me ? (
-        <div className="rounded-2xl border border-line bg-white/80 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="kb-rise kb-rise-1 rounded-2xl border border-line/80 bg-white/80 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm text-ink/55">Current plan</p>
-              <p className="font-display text-3xl">{me.subscription.limits.name}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink/45">Current plan</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+                <p className="font-display text-3xl tracking-tight">{me.subscription.limits.name}</p>
+                <Badge tone={onPaid ? 'ok' : 'neutral'}>{onPaid ? 'Paid' : 'Free'}</Badge>
+              </div>
             </div>
-            {me.subscription.plan !== 'free' ? (
+            {onPaid ? (
               <Button variant="secondary" onClick={() => void portal()} disabled={busy === 'portal'}>
-                Manage in Stripe
+                {busy === 'portal' ? 'Opening…' : 'Manage in Stripe'}
               </Button>
             ) : null}
           </div>
@@ -101,55 +92,73 @@ export function BillingPage() {
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-mist">
-              <div className="h-full rounded-full bg-teal" style={{ width: `${usagePct}%` }} />
+              <div
+                className="h-full rounded-full bg-teal transition-[width] duration-500"
+                style={{ width: `${usagePct}%` }}
+              />
             </div>
           </div>
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="kb-rise kb-rise-2 grid gap-3 lg:grid-cols-3">
         {PLANS_COPY.map((plan) => {
           const current = me?.subscription.plan === plan.id
           return (
             <div
               key={plan.id}
-              className={`rounded-2xl border p-6 ${current ? 'border-teal bg-white' : 'border-line bg-white/70'}`}
+              className={`flex flex-col rounded-2xl border p-6 transition ${
+                current
+                  ? 'border-teal/50 bg-white shadow-[0_16px_40px_-28px_rgba(15,118,110,0.35)]'
+                  : 'border-line/80 bg-white/70'
+              }`}
             >
-              <h2 className="font-display text-2xl">{plan.name}</h2>
-              <p className="mt-2 font-display text-3xl">${plan.price}/mo</p>
-              <ul className="mt-4 space-y-1 text-sm text-ink/65">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-display text-2xl tracking-tight">{plan.name}</h2>
+                {current ? <Badge tone="ok">Current</Badge> : null}
+              </div>
+              <p className="mt-2 font-display text-3xl tracking-tight">
+                ${plan.price}
+                <span className="text-lg font-sans font-medium text-ink/45">/mo</span>
+              </p>
+              <ul className="mt-5 flex-1 space-y-2.5 text-sm text-ink/65">
                 {plan.perks.map((p) => (
-                  <li key={p}>• {p}</li>
+                  <li key={p} className="flex gap-2">
+                    <span className="text-teal">✓</span>
+                    <span>{p}</span>
+                  </li>
                 ))}
               </ul>
-              <div className="mt-5 space-y-2">
+              <div className="mt-6">
                 {plan.id === 'free' ? (
+                  current ? (
+                    <Button className="w-full" variant="secondary" disabled>
+                      Current plan
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full"
+                      variant="secondary"
+                      disabled={busy !== null}
+                      onClick={() => void portal()}
+                    >
+                      {busy === 'portal' ? 'Opening…' : 'Downgrade in Stripe'}
+                    </Button>
+                  )
+                ) : (
                   <Button
                     className="w-full"
-                    variant="secondary"
                     disabled={current || busy !== null}
-                    onClick={() => void demoPlan('free')}
+                    onClick={() => void checkout(plan.id as 'pro' | 'business')}
                   >
-                    {current ? 'Current plan' : 'Switch to Free (demo)'}
+                    {current
+                      ? 'Current plan'
+                      : busy === plan.id
+                        ? 'Redirecting…'
+                        : plan.id === 'pro'
+                          ? 'Upgrade to Pro'
+                          : 'Upgrade to Business'}
                   </Button>
-                ) : (
-                  <>
-                    <Button
-                      className="w-full"
-                      disabled={current || busy !== null}
-                      onClick={() => void checkout(plan.id as 'pro' | 'business')}
-                    >
-                      {current ? 'Current plan' : busy === plan.id ? 'Redirecting…' : `Upgrade via Stripe`}
-                    </Button>
-                    <Button
-                      className="w-full"
-                      variant="ghost"
-                      disabled={current || busy !== null}
-                      onClick={() => void demoPlan(plan.id as PlanId)}
-                    >
-                      Simulate plan (demo)
-                    </Button>
-                  </>
                 )}
               </div>
             </div>
