@@ -18,7 +18,7 @@ knowbase/
 | Backend | Node.js, Fastify (module monolith) |
 | Data / Auth | Supabase (Auth, Postgres, Storage, pgvector) |
 | AI | OpenAI (`text-embedding-3-small`, `gpt-4o-mini`) |
-| Billing | Stripe Checkout (test) + demo plan bypass |
+| Billing | Stripe Checkout (test) |
 
 ## Prerequisites
 

@@ -12,10 +12,6 @@ const checkoutSchema = z.object({
   plan: z.enum(['pro', 'business']),
 })
 
-const demoPlanSchema = z.object({
-  plan: z.enum(['free', 'pro', 'business']),
-})
-
 async function ensureCustomer(userId: string, email: string): Promise<string> {
   const s = requireStripe()
   const { data: sub } = await supabaseAdmin
@@ -119,17 +115,6 @@ export async function billingRoutes(app: FastifyInstance) {
       return_url: `${config.FRONTEND_URL}/app/billing`,
     })
     return { url: session.url }
-  })
-
-  // Demo bypass for interview reviewers without Stripe
-  app.post('/demo-plan', { preHandler: authGuard }, async (request) => {
-    const body = demoPlanSchema.parse(request.body)
-    await upsertSubscription({
-      userId: request.user.id,
-      plan: body.plan,
-      status: 'active',
-    })
-    return { ok: true, plan: body.plan }
   })
 
   app.post('/webhook', { config: { rawBody: true } }, async (request, reply) => {

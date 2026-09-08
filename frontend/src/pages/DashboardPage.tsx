@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Bot } from '../lib/types'
 import { Badge, Button, Input } from '../components/ui'
+import { getErrorMessage, isPlanLimitError, PlanLimitNotice } from '../components/PlanLimitNotice'
 
 function CreateBotForm({
   name,
@@ -38,6 +39,7 @@ export function DashboardPage() {
   const [bots, setBots] = useState<Bot[]>([])
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [limitError, setLimitError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
 
@@ -61,6 +63,7 @@ export function DashboardPage() {
     e.preventDefault()
     setCreating(true)
     setError(null)
+    setLimitError(null)
     try {
       const bot = await api<Bot>('/v1/bots', {
         method: 'POST',
@@ -69,7 +72,9 @@ export function DashboardPage() {
       setName('')
       setBots((prev) => [bot, ...prev])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create bot')
+      const message = getErrorMessage(err, 'Failed to create bot')
+      if (isPlanLimitError(err)) setLimitError(message)
+      else setError(message)
     } finally {
       setCreating(false)
     }
@@ -89,6 +94,7 @@ export function DashboardPage() {
         {!loading && bots.length > 0 ? <CreateBotForm {...createFormProps} /> : null}
       </div>
 
+      {limitError ? <PlanLimitNotice message={limitError} /> : null}
       {error ? (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       ) : null}

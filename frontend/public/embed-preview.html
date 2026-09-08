@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Widget preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          radial-gradient(ellipse 70% 50% at 20% 0%, rgba(143, 201, 188, 0.35), transparent 55%),
+          #f4faf8;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #0c1a17;
+      }
+      main {
+        padding: 28px 24px;
+        max-width: 420px;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 8px;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: rgba(12, 26, 23, 0.55);
+      }
+      .hint {
+        margin-top: 16px;
+        font-size: 0.75rem;
+        color: rgba(12, 26, 23, 0.4);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Your website</h1>
+      <p>Open the chat bubble in the corner to try the embed live.</p>
+      <p class="hint" id="status">Loading widget…</p>
+    </main>
+    <script>
+      ;(function () {
+        const params = new URLSearchParams(location.search)
+        const key = params.get('key')
+        const api = (params.get('api') || 'http://localhost:3001').replace(/\/$/, '')
+        const status = document.getElementById('status')
+        if (!key || key === 'pk_YOUR_KEY') {
+          status.textContent = 'Missing bot public key.'
+          return
+        }
+        const s = document.createElement('script')
+        s.src = api + '/widget.js'
+        s.async = true
+        s.setAttribute('data-bot-key', key)
+        s.setAttribute('data-api', api)
+        s.onload = function () {
+          status.textContent = 'Widget loaded — click the bubble.'
+        }
+        s.onerror = function () {
+          status.textContent = 'Could not load widget.js. Is the API running?'
+        }
+        document.body.appendChild(s)
+      })()
+    </script>
+  </body>
+</html>
