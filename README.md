@@ -6,6 +6,10 @@ Fullstack MVP: upload SaaS docs → ChatGPT-style assistant + embeddable website
 knowbase/
 ├── frontend/          # React + Vite + Tailwind (app, landing, widget)
 ├── backend/           # Fastify API (RAG, billing, widget public API)
+├── docker/            # Nginx config for the web image
+├── Dockerfile.api
+├── Dockerfile.web
+├── docker-compose.yml
 ├── package.json       # npm workspaces
 └── README.md
 ```
@@ -22,7 +26,7 @@ knowbase/
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 20+ **or** Docker / Docker Compose
 - Supabase project
 - OpenAI API key
 - (Optional) Stripe test keys
@@ -52,11 +56,11 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-Fill Supabase URL + publishable/secret (or anon/service_role) keys, and `OPENAI_API_KEY`.
+Fill Supabase URL + **Publishable** / **Secret** keys (dashboard names; legacy anon/service_role aliases still work), and `OPENAI_API_KEY`.
 
-Frontend needs the same Supabase URL + **publishable/anon** key and `VITE_API_URL=http://localhost:3001`.
+Frontend needs `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_API_URL=http://localhost:3001`.
 
-### 4. Run
+### 4. Run (local Node)
 
 ```bash
 # terminal 1
@@ -70,7 +74,33 @@ npm run dev:web
 - API: http://localhost:3001/health  
 - Metrics: http://localhost:3001/metrics  
 
-Build the embed widget (served by the API):
+### 4b. Run with Docker
+
+Builds and starts API + web (Nginx) from one compose file. Supabase / OpenAI / Stripe stay external (SaaS).
+
+```bash
+cp .env.docker.example .env
+# fill SUPABASE_*, VITE_SUPABASE_*, OPENAI_API_KEY (and optional Stripe)
+
+docker compose up --build
+# or: npm run docker:up
+```
+
+- App: http://localhost:8080  
+- API: http://localhost:3001  
+- Redis: localhost:6379 (shared rate-limit store; API connects via `REDIS_URL=redis://redis:6379`)  
+- Health: http://localhost:3001/health  
+
+Optional dedicated ingest worker:
+
+```bash
+# set INGEST_EMBEDDED_WORKER=false in .env
+docker compose --profile worker up --build
+```
+
+Stop: `docker compose down` / `npm run docker:down`.
+
+Build the embed widget (served by the API) when developing locally without Docker:
 
 ```bash
 npm run build:widget
@@ -86,7 +116,7 @@ Built as a module monolith with explicit backpressure (interview-friendly, produ
 | Vector search cost | **HNSW** index + `hnsw.ef_search` inside `match_chunks`; conversation/message indexes |
 | Hot path DB chatter | TTL caches for published bots / plans; history `LIMIT` in SQL; conversation list via RPC; narrow bot selects |
 | OpenAI storms | Shared **semaphore** (`OPENAI_MAX_INFLIGHT`) + **retry/backoff** on 429/5xx |
-| Abuse / multi-instance | Widget + app chat rate limits; optional **`REDIS_URL`** shared store; atomic message quota RPC |
+| Abuse / multi-instance | Widget + app chat rate limits; **Redis** shared store in Docker; atomic message quota RPC |
 | Billing safety | Stripe webhook **idempotency** via `stripe_events` |
 | Ops | `/health`, `/ready`, `/metrics`; `x-request-id` in logs + responses; graceful SIGTERM drain |
 
@@ -132,6 +162,8 @@ Embed smoke test: open http://localhost:5173/embed-demo.html with your `pk_…` 
 | `npm run load:smoke` | Concurrent `/health` `/ready` `/metrics` latency sample |
 | `npm run test -w knowbase-backend` | Backend unit + ops inject tests |
 | `npm run worker -w knowbase-backend` | Dedicated Postgres ingest worker |
+| `npm run docker:up` | Build & run API + web via Docker Compose |
+| `npm run docker:down` | Stop Compose stack |
 
 ## Notes
 

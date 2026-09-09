@@ -1,0 +1,18 @@
+# Dependencies and build context for Knowbase Docker images
+node_modules
+**/node_modules
+frontend/dist
+backend/dist
+.git
+.cursor
+**/.env
+backend/.env
+frontend/.env
+.env.local
+*.log
+.DS_Store
+coverage
+agent-transcripts
+uploads
+terminals
+backend/test

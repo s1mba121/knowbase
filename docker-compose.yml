@@ -1,0 +1,113 @@
+# Knowbase — Docker Compose
+# Usage:
+#   1. cp .env.docker.example .env
+#   2. fill Supabase + OpenAI (+ optional Stripe)
+#   3. docker compose up --build
+#
+# App:   http://localhost:8080
+# API:   http://localhost:3001
+# Redis: localhost:6379 (rate-limit store for API)
+
+name: knowbase
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: knowbase-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - knowbase_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: knowbase-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:3001}
+      INGEST_EMBEDDED_WORKER: ${INGEST_EMBEDDED_WORKER:-true}
+      # Always use compose Redis unless explicitly overridden
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_ANON_KEY:-}}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
+      STRIPE_PRICE_BUSINESS: ${STRIPE_PRICE_BUSINESS:-}
+      INGEST_CONCURRENCY: ${INGEST_CONCURRENCY:-2}
+      INGEST_MAX_QUEUED: ${INGEST_MAX_QUEUED:-20}
+      OPENAI_MAX_INFLIGHT: ${OPENAI_MAX_INFLIGHT:-8}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-${SUPABASE_URL}}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}}}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    container_name: knowbase-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: knowbase-worker
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      INGEST_EMBEDDED_WORKER: "false"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_ANON_KEY:-}}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  knowbase_redis:

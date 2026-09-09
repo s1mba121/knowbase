@@ -7,10 +7,12 @@ const envSchema = z
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     BACKEND_URL: z.string().default('http://localhost:3001'),
     SUPABASE_URL: z.string().min(1),
-    SUPABASE_ANON_KEY: z.string().optional(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+    // Current Supabase dashboard names
     SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
     SUPABASE_SECRET_KEY: z.string().optional(),
+    // Legacy aliases (anon / service_role)
+    SUPABASE_ANON_KEY: z.string().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().min(1),
     STRIPE_SECRET_KEY: z.string().optional().default(''),
     STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
@@ -28,18 +30,18 @@ const envSchema = z
       .transform((v) => !['0', 'false', 'no'].includes(v.toLowerCase())),
   })
   .superRefine((val, ctx) => {
-    if (!val.SUPABASE_ANON_KEY && !val.SUPABASE_PUBLISHABLE_KEY) {
+    if (!val.SUPABASE_PUBLISHABLE_KEY && !val.SUPABASE_ANON_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['SUPABASE_ANON_KEY'],
-        message: 'Set SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY',
+        path: ['SUPABASE_PUBLISHABLE_KEY'],
+        message: 'Set SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY)',
       })
     }
-    if (!val.SUPABASE_SERVICE_ROLE_KEY && !val.SUPABASE_SECRET_KEY) {
+    if (!val.SUPABASE_SECRET_KEY && !val.SUPABASE_SERVICE_ROLE_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['SUPABASE_SERVICE_ROLE_KEY'],
-        message: 'Set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY',
+        path: ['SUPABASE_SECRET_KEY'],
+        message: 'Set SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)',
       })
     }
     if (val.STRIPE_SECRET_KEY && !val.STRIPE_WEBHOOK_SECRET) {
@@ -55,9 +57,8 @@ const envSchema = z
     FRONTEND_URL: val.FRONTEND_URL,
     BACKEND_URL: val.BACKEND_URL,
     SUPABASE_URL: val.SUPABASE_URL,
-    SUPABASE_ANON_KEY: val.SUPABASE_ANON_KEY || val.SUPABASE_PUBLISHABLE_KEY || '',
-    SUPABASE_SERVICE_ROLE_KEY:
-      val.SUPABASE_SERVICE_ROLE_KEY || val.SUPABASE_SECRET_KEY || '',
+    SUPABASE_PUBLISHABLE_KEY: val.SUPABASE_PUBLISHABLE_KEY || val.SUPABASE_ANON_KEY || '',
+    SUPABASE_SECRET_KEY: val.SUPABASE_SECRET_KEY || val.SUPABASE_SERVICE_ROLE_KEY || '',
     OPENAI_API_KEY: val.OPENAI_API_KEY,
     STRIPE_SECRET_KEY: val.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: val.STRIPE_WEBHOOK_SECRET,
