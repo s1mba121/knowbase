@@ -94,25 +94,28 @@ async function prepareRag(opts: {
     content: opts.message,
   })
 
-  const embedding = await embedQuery(opts.message)
+  const HISTORY_LIMIT = 12
+  const [embedding, historyResult] = await Promise.all([
+    embedQuery(opts.message),
+    supabaseAdmin
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', conversationId)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: false })
+      .limit(HISTORY_LIMIT),
+  ])
+
+  if (historyResult.error) throw httpError(500, historyResult.error.message)
+
   const chunks = await matchChunks(opts.bot.id, embedding)
 
   const context = chunks
     .map((c, i) => `[Source ${i + 1}${c.metadata?.filename ? ` — ${c.metadata.filename}` : ''}]\n${c.content}`)
     .join('\n\n')
 
-  const { data: historyRows, error: historyError } = await supabaseAdmin
-    .from('messages')
-    .select('role, content')
-    .eq('conversation_id', conversationId)
-    .in('role', ['user', 'assistant'])
-    .order('created_at', { ascending: true })
-
-  if (historyError) throw httpError(500, historyError.message)
-
-  const HISTORY_LIMIT = 12
-  const history = (historyRows ?? [])
-    .slice(-HISTORY_LIMIT)
+  const history = (historyResult.data ?? [])
+    .reverse()
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
@@ -154,17 +157,18 @@ async function finalizeAssistant(opts: {
   answer: string
   sources: ChatSource[]
 }) {
-  await supabaseAdmin.from('messages').insert({
-    conversation_id: opts.conversationId,
-    role: 'assistant',
-    content: opts.answer,
-    sources: opts.sources,
-  })
-
-  await supabaseAdmin
-    .from('conversations')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', opts.conversationId)
+  await Promise.all([
+    supabaseAdmin.from('messages').insert({
+      conversation_id: opts.conversationId,
+      role: 'assistant',
+      content: opts.answer,
+      sources: opts.sources,
+    }),
+    supabaseAdmin
+      .from('conversations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', opts.conversationId),
+  ])
 }
 
 export async function runRagChat(opts: {
@@ -284,51 +288,57 @@ export async function* streamChatInApp(
   })
 }
 
-function mapConversationRows(
-  data: Array<{
-    id: string
-    channel: string
-    visitor_id?: string | null
-    created_at: string
-    updated_at: string
-    messages: Array<{ content: string; role: string; created_at: string }> | null
-  }>,
-) {
-  return data.map((row) => {
-    const msgs = Array.isArray(row.messages) ? row.messages : []
-    const sorted = [...msgs].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-    )
-    const firstUser = sorted.find((m) => m.role === 'user')
-    const preview = (firstUser?.content ?? 'New chat').replace(/\s+/g, ' ').trim().slice(0, 72)
-    return {
-      id: row.id,
-      channel: row.channel,
-      visitor_id: row.visitor_id ?? null,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      preview,
-      message_count: msgs.length,
-    }
-  })
-}
-
 export async function listConversations(
   userId: string,
   botId: string,
   channel: 'app' | 'widget' = 'app',
 ) {
   await getBot(userId, botId)
-  const { data, error } = await supabaseAdmin
-    .from('conversations')
-    .select('id, channel, visitor_id, created_at, updated_at, messages(content, role, created_at)')
-    .eq('bot_id', botId)
-    .eq('channel', channel)
-    .order('updated_at', { ascending: false })
-    .limit(50)
 
-  if (error) throw httpError(500, error.message)
-  return mapConversationRows((data ?? []) as Parameters<typeof mapConversationRows>[0])
+  const { data, error } = await supabaseAdmin.rpc('list_bot_conversations', {
+    p_bot_id: botId,
+    p_channel: channel,
+    p_limit: 50,
+  })
+
+  if (error) {
+    // Fallback before migration 003 is applied
+    console.warn('[chat] list_bot_conversations RPC unavailable:', error.message)
+    const { data: rows, error: fallbackError } = await supabaseAdmin
+      .from('conversations')
+      .select('id, channel, visitor_id, created_at, updated_at')
+      .eq('bot_id', botId)
+      .eq('channel', channel)
+      .order('updated_at', { ascending: false })
+      .limit(50)
+    if (fallbackError) throw httpError(500, fallbackError.message)
+    return (rows ?? []).map((row) => ({
+      ...row,
+      visitor_id: row.visitor_id ?? null,
+      preview: 'Chat',
+      message_count: 0,
+    }))
+  }
+
+  return (data ?? []).map(
+    (row: {
+      id: string
+      channel: string
+      visitor_id: string | null
+      created_at: string
+      updated_at: string
+      preview: string
+      message_count: number | string
+    }) => ({
+      id: row.id,
+      channel: row.channel,
+      visitor_id: row.visitor_id ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      preview: row.preview || 'New chat',
+      message_count: Number(row.message_count ?? 0),
+    }),
+  )
 }
 
 export async function getConversationMessages(userId: string, botId: string, conversationId: string) {
@@ -346,6 +356,7 @@ export async function getConversationMessages(userId: string, botId: string, con
     .select('id, role, content, sources, created_at')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
+    .limit(200)
 
   if (error) throw httpError(500, error.message)
   return data

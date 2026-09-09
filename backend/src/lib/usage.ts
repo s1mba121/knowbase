@@ -1,19 +1,34 @@
 import { supabaseAdmin } from './supabase.js'
 import { PLANS, type PlanId, type PlanLimits } from './plans.js'
 import { httpError } from '../plugins/error-handler.js'
+import { TtlCache } from './ttl-cache.js'
+
+const planCache = new TtlCache<PlanLimits>(15_000, 1000)
 
 export async function getUserPlan(userId: string): Promise<PlanLimits> {
+  const cached = planCache.get(userId)
+  if (cached) return cached
+
   const { data } = await supabaseAdmin
     .from('subscriptions')
     .select('plan, status')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!data) return PLANS.free
+  if (!data) {
+    planCache.set(userId, PLANS.free)
+    return PLANS.free
+  }
 
   const active = data.status === 'active' || data.status === 'trialing'
   const planId = (active ? (data.plan as PlanId) : 'free') || 'free'
-  return PLANS[planId] ?? PLANS.free
+  const plan = PLANS[planId] ?? PLANS.free
+  planCache.set(userId, plan)
+  return plan
+}
+
+export function invalidateUserPlanCache(userId: string): void {
+  planCache.delete(userId)
 }
 
 export function currentMonthKey(date = new Date()): string {
@@ -94,13 +109,24 @@ export async function assertCanUploadDoc(
   fileBytes: number,
 ): Promise<PlanLimits> {
   const plan = await getUserPlan(userId)
-  const { data: docs } = await supabaseAdmin
-    .from('documents')
-    .select('bytes')
-    .eq('bot_id', botId)
 
-  const count = docs?.length ?? 0
-  const usedBytes = (docs ?? []).reduce((sum, d) => sum + (d.bytes ?? 0), 0)
+  const { data: usage, error } = await supabaseAdmin.rpc('bot_document_usage', {
+    p_bot_id: botId,
+  })
+
+  let count = 0
+  let usedBytes = 0
+
+  if (error) {
+    console.warn('[usage] bot_document_usage RPC unavailable, using fallback:', error.message)
+    const { data: docs } = await supabaseAdmin.from('documents').select('bytes').eq('bot_id', botId)
+    count = docs?.length ?? 0
+    usedBytes = (docs ?? []).reduce((sum, d) => sum + (d.bytes ?? 0), 0)
+  } else {
+    const row = Array.isArray(usage) ? usage[0] : usage
+    count = Number(row?.doc_count ?? 0)
+    usedBytes = Number(row?.total_bytes ?? 0)
+  }
 
   if (count >= plan.docsPerBot) {
     throw httpError(402, `Document limit reached for ${plan.name} plan (${plan.docsPerBot} files).`)

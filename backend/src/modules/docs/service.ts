@@ -2,10 +2,13 @@ import { supabaseAdmin } from '../../lib/supabase.js'
 import { embedTexts } from '../../lib/openai.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { assertCanUploadDoc } from '../../lib/usage.js'
+import { scheduleIngest } from '../../lib/ingest-queue.js'
 import { getBot } from '../bots/service.js'
 import { extractText } from './extract.js'
 import { chunkText } from './chunk.js'
 import { assertFileLooksValid } from './formats.js'
+
+const CHUNK_INSERT_BATCH = 100
 
 export async function listDocuments(userId: string, botId: string) {
   await getBot(userId, botId)
@@ -14,6 +17,7 @@ export async function listDocuments(userId: string, botId: string) {
     .select('id, bot_id, filename, status, bytes, error_message, created_at, updated_at')
     .eq('bot_id', botId)
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error) throw httpError(500, 'Failed to list documents')
   return data
@@ -64,19 +68,20 @@ export async function uploadAndIngest(
     throw httpError(500, 'Failed to create document record')
   }
 
-  try {
-    await ingestDocument(doc.id, botId, filename, buffer)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Ingest failed'
-    await supabaseAdmin
-      .from('documents')
-      .update({ status: 'failed', error_message: message.slice(0, 500) })
-      .eq('id', doc.id)
-    throw httpError(500, 'Failed to process document')
-  }
+  // Return immediately; extract + embed off the request path (bounded concurrency)
+  scheduleIngest(async () => {
+    try {
+      await ingestDocument(doc.id, botId, filename, buffer)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ingest failed'
+      await supabaseAdmin
+        .from('documents')
+        .update({ status: 'failed', error_message: message.slice(0, 500) })
+        .eq('id', doc.id)
+    }
+  })
 
-  const { data: refreshed } = await supabaseAdmin.from('documents').select('*').eq('id', doc.id).single()
-  return refreshed
+  return doc
 }
 
 async function ingestDocument(documentId: string, botId: string, filename: string, buffer: Buffer) {
@@ -88,7 +93,6 @@ async function ingestDocument(documentId: string, botId: string, filename: strin
   const chunks = chunkText(text)
   if (chunks.length === 0) throw new Error('Document produced no chunks')
 
-  // Batch embeddings (OpenAI allows multiple inputs)
   const batchSize = 32
   const rows: Array<{
     document_id: string
@@ -115,8 +119,11 @@ async function ingestDocument(documentId: string, botId: string, filename: strin
     })
   }
 
-  const { error } = await supabaseAdmin.from('chunks').insert(rows)
-  if (error) throw new Error(error.message)
+  for (let i = 0; i < rows.length; i += CHUNK_INSERT_BATCH) {
+    const slice = rows.slice(i, i + CHUNK_INSERT_BATCH)
+    const { error } = await supabaseAdmin.from('chunks').insert(slice)
+    if (error) throw new Error(error.message)
+  }
 
   await supabaseAdmin
     .from('documents')
@@ -173,17 +180,18 @@ export async function retryDocument(userId: string, botId: string, documentId: s
     .update({ status: 'processing', error_message: null })
     .eq('id', documentId)
 
-  try {
-    await ingestDocument(doc.id, botId, doc.filename, buffer)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Ingest failed'
-    await supabaseAdmin
-      .from('documents')
-      .update({ status: 'failed', error_message: message })
-      .eq('id', documentId)
-    throw httpError(500, message)
-  }
+  scheduleIngest(async () => {
+    try {
+      await ingestDocument(doc.id, botId, doc.filename, buffer)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ingest failed'
+      await supabaseAdmin
+        .from('documents')
+        .update({ status: 'failed', error_message: message.slice(0, 500) })
+        .eq('id', documentId)
+    }
+  })
 
   const { data: refreshed } = await supabaseAdmin.from('documents').select('*').eq('id', doc.id).single()
-  return refreshed
+  return refreshed ?? { ...doc, status: 'processing', error_message: null }
 }

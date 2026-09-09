@@ -1,5 +1,5 @@
-import Fastify from 'fastify'
-import cors from '@fastify/cors'
+import Fastify, { type FastifyRequest } from 'fastify'
+import cors, { type FastifyCorsOptions } from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
@@ -16,76 +16,80 @@ import { billingRoutes } from './modules/billing/routes.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const APP_ORIGINS = [config.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(
-  (v, i, arr) => arr.indexOf(v) === i,
+const APP_ORIGINS = new Set(
+  [config.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean),
 )
 
-function isAppOrigin(origin: string | undefined): boolean {
-  if (!origin) return true // curl / Stripe / same-origin tools
-  return APP_ORIGINS.includes(origin)
+function isWidgetPath(url: string): boolean {
+  return url.startsWith('/v1/widget') || url.startsWith('/widget.js')
 }
 
 export async function buildApp() {
   const app = Fastify({
     logger: true,
-    bodyLimit: 1 * 1024 * 1024, // default JSON 1MB; multipart has its own limit
+    bodyLimit: 1 * 1024 * 1024,
   })
 
   registerErrorHandler(app)
 
   await app.register(helmet, {
     global: true,
-    contentSecurityPolicy: false, // widget.js is embedded on third-party sites
+    contentSecurityPolicy: false,
   })
 
-  // —— Public widget API: permissive CORS + rate limits ——
-  await app.register(async (widgetScope) => {
-    await widgetScope.register(cors, {
-      origin: true,
-      credentials: false,
-      methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
-    })
-
-    await widgetScope.register(widgetRoutes, { prefix: '/v1/widget' })
-  })
-
-  // —— Authenticated app API: locked CORS ——
-  await app.register(async (apiScope) => {
-    await apiScope.register(cors, {
-      origin: (origin, cb) => {
-        cb(null, isAppOrigin(origin))
-      },
-      credentials: true,
-      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    })
-
-    await apiScope.register(multipart, {
-      limits: { fileSize: 20 * 1024 * 1024, files: 1 },
-    })
-
-    // Preserve raw body for Stripe webhooks
-    apiScope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
-      ;(req as { rawBody?: Buffer }).rawBody = body as Buffer
-      if (req.url?.includes('/billing/webhook')) {
-        done(null, body)
+  // Single CORS registration (avoids duplicate OPTIONS *); policy depends on path
+  await app.register(cors, () => {
+    return (req: FastifyRequest, callback: (err: Error | null, opts?: FastifyCorsOptions) => void) => {
+      const url = req.url.split('?')[0] ?? ''
+      if (isWidgetPath(url)) {
+        callback(null, {
+          origin: true,
+          credentials: false,
+          methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+        })
         return
       }
-      try {
-        const json = body.length ? JSON.parse((body as Buffer).toString('utf8')) : {}
-        done(null, json)
-      } catch (err) {
-        done(err as Error, undefined)
-      }
-    })
 
-    await apiScope.register(authRoutes, { prefix: '/v1/auth' })
-    await apiScope.register(botsRoutes, { prefix: '/v1/bots' })
-    await apiScope.register(docsRoutes, { prefix: '/v1/bots' })
-    await apiScope.register(chatRoutes, { prefix: '/v1/bots' })
-    await apiScope.register(billingRoutes, { prefix: '/v1/billing' })
+      callback(null, {
+        origin: (origin, cb) => {
+          if (!origin) {
+            cb(null, true)
+            return
+          }
+          cb(null, APP_ORIGINS.has(origin))
+        },
+        credentials: true,
+        methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      })
+    }
+  })
+
+  await app.register(multipart, {
+    limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  })
+
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+    ;(req as { rawBody?: Buffer }).rawBody = body as Buffer
+    if (req.url?.includes('/billing/webhook')) {
+      done(null, body)
+      return
+    }
+    try {
+      const json = body.length ? JSON.parse((body as Buffer).toString('utf8')) : {}
+      done(null, json)
+    } catch (err) {
+      done(err as Error, undefined)
+    }
   })
 
   app.get('/health', async () => ({ ok: true, service: 'knowbase-api' }))
+
+  await app.register(authRoutes, { prefix: '/v1/auth' })
+  await app.register(botsRoutes, { prefix: '/v1/bots' })
+  await app.register(docsRoutes, { prefix: '/v1/bots' })
+  await app.register(chatRoutes, { prefix: '/v1/bots' })
+  await app.register(widgetRoutes, { prefix: '/v1/widget' })
+  await app.register(billingRoutes, { prefix: '/v1/billing' })
 
   const publicDir = path.join(__dirname, '../public')
   await app.register(fastifyStatic, {

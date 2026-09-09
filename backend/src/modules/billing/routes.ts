@@ -6,7 +6,7 @@ import { requireStripe, stripe } from '../../lib/stripe.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { planFromStripePrice, type PlanId, PLANS } from '../../lib/plans.js'
-import { getMessageUsage, getUserPlan } from '../../lib/usage.js'
+import { getMessageUsage, getUserPlan, invalidateUserPlanCache } from '../../lib/usage.js'
 
 const checkoutSchema = z.object({
   plan: z.enum(['pro', 'business']),
@@ -63,6 +63,7 @@ async function upsertSubscription(opts: {
   } else {
     await supabaseAdmin.from('subscriptions').insert(payload)
   }
+  invalidateUserPlanCache(opts.userId)
 }
 
 export async function billingRoutes(app: FastifyInstance) {

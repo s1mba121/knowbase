@@ -55,6 +55,18 @@ export function BotDetailPage() {
     void load()
   }, [botId])
 
+  // Poll while any doc is still extracting / embedding
+  useEffect(() => {
+    const busy = docs.some((d) => d.status === 'processing' || d.status === 'pending')
+    if (!busy) return
+    const id = window.setInterval(() => {
+      void api<DocumentRow[]>(`/v1/bots/${botId}/documents`)
+        .then(setDocs)
+        .catch(() => {})
+    }, 2500)
+    return () => window.clearInterval(id)
+  }, [botId, docs])
+
   async function onUpload(file: File) {
     setUploading(true)
     setError(null)
@@ -67,7 +79,7 @@ export function BotDetailPage() {
       await load()
       await refreshMe()
       toast.dismiss(toastId)
-      toast.success('Uploaded', `${file.name} is ready in your knowledge base.`)
+      toast.success('Uploaded', `${file.name} is processing in the background.`)
     } catch (err) {
       const message = getErrorMessage(err, 'Upload failed')
       toast.dismiss(toastId)
@@ -137,7 +149,7 @@ export function BotDetailPage() {
       await api(`/v1/bots/${botId}/documents/${id}/retry`, { method: 'POST' })
       await load()
       toast.dismiss(toastId)
-      toast.success('Ready', `${name} was reprocessed.`)
+      toast.success('Queued', `${name} is processing again.`)
     } catch (err) {
       const message = getErrorMessage(err, 'Retry failed')
       toast.dismiss(toastId)
