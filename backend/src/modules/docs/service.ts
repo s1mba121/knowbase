@@ -5,6 +5,7 @@ import { assertCanUploadDoc } from '../../lib/usage.js'
 import { getBot } from '../bots/service.js'
 import { extractText } from './extract.js'
 import { chunkText } from './chunk.js'
+import { assertFileLooksValid } from './formats.js'
 
 export async function listDocuments(userId: string, botId: string) {
   await getBot(userId, botId)
@@ -14,7 +15,7 @@ export async function listDocuments(userId: string, botId: string) {
     .eq('bot_id', botId)
     .order('created_at', { ascending: false })
 
-  if (error) throw httpError(500, error.message)
+  if (error) throw httpError(500, 'Failed to list documents')
   return data
 }
 
@@ -26,6 +27,15 @@ export async function uploadAndIngest(
   mimeType: string,
 ) {
   await getBot(userId, botId)
+
+  try {
+    assertFileLooksValid(filename, buffer, mimeType)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Invalid file'
+    const status = (err as { statusCode?: number }).statusCode ?? 400
+    throw httpError(status, message)
+  }
+
   await assertCanUploadDoc(userId, botId, buffer.byteLength)
 
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -35,13 +45,13 @@ export async function uploadAndIngest(
     .from('documents')
     .upload(storagePath, buffer, { contentType: mimeType || 'application/octet-stream', upsert: false })
 
-  if (uploadError) throw httpError(500, uploadError.message)
+  if (uploadError) throw httpError(500, 'Failed to upload file')
 
   const { data: doc, error: insertError } = await supabaseAdmin
     .from('documents')
     .insert({
       bot_id: botId,
-      filename: filename,
+      filename: filename.slice(0, 255),
       storage_path: storagePath,
       status: 'processing',
       bytes: buffer.byteLength,
@@ -49,18 +59,20 @@ export async function uploadAndIngest(
     .select('*')
     .single()
 
-  if (insertError) throw httpError(500, insertError.message)
+  if (insertError) {
+    await supabaseAdmin.storage.from('documents').remove([storagePath])
+    throw httpError(500, 'Failed to create document record')
+  }
 
-  // Process inline for MVP (small files). Failures update status.
   try {
     await ingestDocument(doc.id, botId, filename, buffer)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ingest failed'
     await supabaseAdmin
       .from('documents')
-      .update({ status: 'failed', error_message: message })
+      .update({ status: 'failed', error_message: message.slice(0, 500) })
       .eq('id', doc.id)
-    throw httpError(500, message)
+    throw httpError(500, 'Failed to process document')
   }
 
   const { data: refreshed } = await supabaseAdmin.from('documents').select('*').eq('id', doc.id).single()

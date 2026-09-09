@@ -34,6 +34,13 @@ const envSchema = z
         message: 'Set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY',
       })
     }
+    if (val.STRIPE_SECRET_KEY && !val.STRIPE_WEBHOOK_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STRIPE_WEBHOOK_SECRET'],
+        message: 'STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is set',
+      })
+    }
   })
   .transform((val) => ({
     PORT: val.PORT,

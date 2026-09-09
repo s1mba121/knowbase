@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { embedQuery, openai, CHAT_MODEL } from '../../lib/openai.js'
 import { httpError } from '../../plugins/error-handler.js'
-import { assertCanSendMessage, incrementMessageUsage } from '../../lib/usage.js'
+import { consumeMessageOrThrow } from '../../lib/usage.js'
 import { getBot } from '../bots/service.js'
 
 type MatchedChunk = {
@@ -51,18 +51,22 @@ async function prepareRag(opts: {
   channel: 'app' | 'widget'
   visitorId?: string | null
 }): Promise<PreparedRag> {
-  await assertCanSendMessage(opts.bot.owner_id)
-
   let conversationId = opts.conversationId ?? null
 
   if (conversationId) {
     const { data: conv } = await supabaseAdmin
       .from('conversations')
-      .select('id, bot_id')
+      .select('id, bot_id, channel, visitor_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (!conv || conv.bot_id !== opts.bot.id) {
       throw httpError(404, 'Conversation not found')
+    }
+    if (opts.channel === 'widget') {
+      if (conv.channel !== 'widget') throw httpError(404, 'Conversation not found')
+      if (conv.visitor_id && (!opts.visitorId || conv.visitor_id !== opts.visitorId)) {
+        throw httpError(403, 'Conversation does not belong to this visitor')
+      }
     }
   } else {
     const { data: conv, error } = await supabaseAdmin
@@ -80,6 +84,9 @@ async function prepareRag(opts: {
   }
 
   if (!conversationId) throw httpError(500, 'Failed to create conversation')
+
+  // Reserve quota only after conversation is validated/created
+  await consumeMessageOrThrow(opts.bot.owner_id)
 
   await supabaseAdmin.from('messages').insert({
     conversation_id: conversationId,
@@ -158,8 +165,6 @@ async function finalizeAssistant(opts: {
     .from('conversations')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', opts.conversationId)
-
-  await incrementMessageUsage(opts.ownerId, 1)
 }
 
 export async function runRagChat(opts: {

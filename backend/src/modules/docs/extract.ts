@@ -8,6 +8,9 @@ const mammoth = require('mammoth') as {
   extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>
 }
 
+const MAX_EXTRACT_CHARS = 500_000
+const EXTRACT_TIMEOUT_MS = 20_000
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -23,6 +26,25 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+function truncate(text: string): string {
+  if (text.length <= MAX_EXTRACT_CHARS) return text
+  return text.slice(0, MAX_EXTRACT_CHARS)
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 export async function extractText(filename: string, buffer: Buffer): Promise<string> {
   if (!isSupportedDoc(filename)) {
     throw httpError(400, `Unsupported file type. Upload ${DOC_FORMATS_LABEL}.`)
@@ -31,19 +53,23 @@ export async function extractText(filename: string, buffer: Buffer): Promise<str
   const ext = getExtension(filename)
 
   if (ext === '.pdf') {
-    const parsed = await pdfParse(buffer)
-    return parsed.text ?? ''
+    const parsed = await withTimeout(pdfParse(buffer), EXTRACT_TIMEOUT_MS, 'PDF extract')
+    return truncate(parsed.text ?? '')
   }
 
   if (ext === '.docx') {
-    const result = await mammoth.extractRawText({ buffer })
-    return result.value ?? ''
+    const result = await withTimeout(
+      mammoth.extractRawText({ buffer }),
+      EXTRACT_TIMEOUT_MS,
+      'DOCX extract',
+    )
+    return truncate(result.value ?? '')
   }
 
   if (ext === '.html' || ext === '.htm') {
-    return stripHtml(buffer.toString('utf8'))
+    return truncate(stripHtml(buffer.toString('utf8')))
   }
 
   // .txt, .md, .markdown, .csv
-  return buffer.toString('utf8')
+  return truncate(buffer.toString('utf8'))
 }

@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 import { authGuard } from '../../plugins/auth.js'
+import { config } from '../../config.js'
 import { chatSchema } from './schema.js'
 import * as chat from './service.js'
+
+const APP_ORIGINS = new Set(
+  [config.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean),
+)
 
 export async function chatRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authGuard)
@@ -15,14 +20,18 @@ export async function chatRoutes(app: FastifyInstance) {
   app.post('/:botId/chat/stream', async (request, reply) => {
     const { botId } = request.params as { botId: string }
     const body = chatSchema.parse(request.body)
+    const origin = request.headers.origin
+    const allowOrigin =
+      typeof origin === 'string' && APP_ORIGINS.has(origin) ? origin : config.FRONTEND_URL
 
     reply.hijack()
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': request.headers.origin ?? '*',
+      'Access-Control-Allow-Origin': allowOrigin,
       'Access-Control-Allow-Credentials': 'true',
+      Vary: 'Origin',
     })
 
     try {

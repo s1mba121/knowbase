@@ -31,7 +31,28 @@ export async function getMessageUsage(userId: string): Promise<number> {
   return data?.messages_count ?? 0
 }
 
-export async function incrementMessageUsage(userId: string, by = 1): Promise<void> {
+/** Atomically consume one message against the plan limit. Returns false if over quota. */
+export async function tryConsumeMessage(userId: string, limit: number): Promise<boolean> {
+  const month = currentMonthKey()
+  const { data, error } = await supabaseAdmin.rpc('consume_message_quota', {
+    p_user_id: userId,
+    p_month: month,
+    p_limit: limit,
+  })
+
+  if (error) {
+    // Fallback if migration 002 is not applied yet (non-atomic but still gates)
+    console.warn('[usage] consume_message_quota RPC unavailable, using fallback:', error.message)
+    const used = await getMessageUsage(userId)
+    if (used >= limit) return false
+    await incrementMessageUsageFallback(userId, 1)
+    return true
+  }
+
+  return data === true
+}
+
+async function incrementMessageUsageFallback(userId: string, by = 1): Promise<void> {
   const month = currentMonthKey()
   const { data } = await supabaseAdmin
     .from('usage_monthly')
@@ -95,6 +116,19 @@ export async function assertCanSendMessage(userId: string): Promise<PlanLimits> 
   const used = await getMessageUsage(userId)
   if (used >= plan.messagesPerMonth) {
     throw httpError(402, `Monthly message limit reached for ${plan.name} plan (${plan.messagesPerMonth}).`)
+  }
+  return plan
+}
+
+/** Reserve quota up-front (atomic). Call instead of assert + later increment. */
+export async function consumeMessageOrThrow(userId: string): Promise<PlanLimits> {
+  const plan = await getUserPlan(userId)
+  const ok = await tryConsumeMessage(userId, plan.messagesPerMonth)
+  if (!ok) {
+    throw httpError(
+      402,
+      `Monthly message limit reached for ${plan.name} plan (${plan.messagesPerMonth}).`,
+    )
   }
   return plan
 }

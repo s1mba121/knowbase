@@ -95,3 +95,5 @@ Embed smoke test: open http://localhost:5173/embed-demo.html with your `pk_…` 
 - Secrets stay in `.env` (gitignored). Only `.env.example` is committed.
 - Free plan: watermark on embed, limited bots/docs/messages.
 - Custom brand color requires Pro/Business.
+- After pull, run `backend/supabase/migrations/002_security_hardening.sql` in the Supabase SQL Editor (atomic message quotas).
+- If Stripe is enabled, set `STRIPE_WEBHOOK_SECRET` (required at boot).

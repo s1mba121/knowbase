@@ -129,9 +129,10 @@ export async function billingRoutes(app: FastifyInstance) {
 
     let event
     try {
-      const raw =
-        (request as { rawBody?: Buffer }).rawBody ??
-        Buffer.from(typeof request.body === 'string' ? request.body : JSON.stringify(request.body))
+      const raw = (request as { rawBody?: Buffer }).rawBody
+      if (!raw) {
+        return reply.code(400).send({ error: 'Missing raw request body for webhook verification' })
+      }
       event = stripe.webhooks.constructEvent(raw, sig, config.STRIPE_WEBHOOK_SECRET)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Webhook error'
@@ -142,13 +143,40 @@ export async function billingRoutes(app: FastifyInstance) {
       case 'checkout.session.completed': {
         const session = event.data.object
         const userId = session.metadata?.user_id
-        const plan = (session.metadata?.plan as PlanId) || 'pro'
-        if (userId) {
+        let plan: PlanId = 'free'
+        if (typeof session.subscription === 'string' && stripe) {
+          try {
+            const sub = await stripe.subscriptions.retrieve(session.subscription)
+            const priceId = sub.items.data[0]?.price?.id ?? ''
+            plan = planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
+          } catch {
+            // fall through
+          }
+        }
+        // Local demos without price IDs may still set metadata.plan
+        if (
+          plan === 'free' &&
+          !config.STRIPE_PRICE_PRO &&
+          !config.STRIPE_PRICE_BUSINESS &&
+          (session.metadata?.plan === 'pro' || session.metadata?.plan === 'business')
+        ) {
+          plan = session.metadata.plan as PlanId
+        }
+        if (userId && plan !== 'free') {
           await upsertSubscription({
             userId,
             customerId: typeof session.customer === 'string' ? session.customer : null,
             subscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
             plan,
+            status: 'active',
+          })
+        } else if (userId && plan === 'free') {
+          // Still mark active free if we couldn't map a paid price
+          await upsertSubscription({
+            userId,
+            customerId: typeof session.customer === 'string' ? session.customer : null,
+            subscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
+            plan: 'free',
             status: 'active',
           })
         }
@@ -159,15 +187,14 @@ export async function billingRoutes(app: FastifyInstance) {
         const sub = event.data.object
         const userId = sub.metadata?.user_id
         const priceId = sub.items.data[0]?.price?.id ?? ''
-        const plan =
-          (sub.metadata?.plan as PlanId) ||
-          planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
+        const plan = planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
+        const statusOk = sub.status === 'active' || sub.status === 'trialing'
         if (userId) {
           await upsertSubscription({
             userId,
             customerId: typeof sub.customer === 'string' ? sub.customer : null,
             subscriptionId: sub.id,
-            plan: event.type === 'customer.subscription.deleted' ? 'free' : plan,
+            plan: event.type === 'customer.subscription.deleted' || !statusOk ? 'free' : plan,
             status: event.type === 'customer.subscription.deleted' ? 'canceled' : sub.status,
           })
         }
