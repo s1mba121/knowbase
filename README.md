@@ -42,6 +42,7 @@ npm install
    - [`backend/supabase/migrations/001_initial.sql`](backend/supabase/migrations/001_initial.sql)
    - [`backend/supabase/migrations/002_security_hardening.sql`](backend/supabase/migrations/002_security_hardening.sql)
    - [`backend/supabase/migrations/003_scale_hardening.sql`](backend/supabase/migrations/003_scale_hardening.sql)
+   - [`backend/supabase/migrations/004_ops_hardening.sql`](backend/supabase/migrations/004_ops_hardening.sql)
 3. Auth → Email: for local demo, disable **Confirm email**.
 
 ### 3. Environment
@@ -81,12 +82,25 @@ Built as a module monolith with explicit backpressure (interview-friendly, produ
 
 | Concern | Approach |
 |---------|----------|
-| Sync ingest blocking chat | Upload returns `processing`; extract/embed run on a **bounded queue** (2 concurrent, max 20 queued → HTTP 503) |
-| Vector search cost | **HNSW** index on `chunks.embedding` + composite conversation indexes (`003_scale_hardening.sql`) |
-| Hot path DB chatter | TTL caches for published bots / plans; history `LIMIT 12` in SQL; conversation list via RPC (no nested message dump) |
-| OpenAI storms | Shared **semaphore** (8) around embeddings + chat (held for full SSE lifetime) |
-| Abuse | Widget + in-app chat **rate limits**; atomic message quota RPC |
-| Ops | `/health`, `/ready`, `/metrics` (p50/p95, ingest + OpenAI gate, RSS); `x-request-id` / `x-response-time`; **graceful SIGTERM drain** |
+| Sync ingest blocking chat | Upload stores file + enqueues **Postgres `ingest_jobs`** (SKIP LOCKED); extract/embed in embedded or dedicated worker |
+| Vector search cost | **HNSW** index + `hnsw.ef_search` inside `match_chunks`; conversation/message indexes |
+| Hot path DB chatter | TTL caches for published bots / plans; history `LIMIT` in SQL; conversation list via RPC; narrow bot selects |
+| OpenAI storms | Shared **semaphore** (`OPENAI_MAX_INFLIGHT`) + **retry/backoff** on 429/5xx |
+| Abuse / multi-instance | Widget + app chat rate limits; optional **`REDIS_URL`** shared store; atomic message quota RPC |
+| Billing safety | Stripe webhook **idempotency** via `stripe_events` |
+| Ops | `/health`, `/ready`, `/metrics`; `x-request-id` in logs + responses; graceful SIGTERM drain |
+
+Env knobs: `INGEST_CONCURRENCY`, `INGEST_MAX_QUEUED`, `OPENAI_MAX_INFLIGHT`, `INGEST_EMBEDDED_WORKER`, `REDIS_URL`.
+
+Dedicated worker (optional):
+
+```bash
+# API without embedded poller
+INGEST_EMBEDDED_WORKER=false npm run dev:api
+
+# separate terminal
+npm run worker -w knowbase-backend
+```
 
 Smoke concurrency against the API (no auth):
 
@@ -95,7 +109,7 @@ npm run load:smoke
 # or: node scripts/load-smoke.mjs http://localhost:3001 40 200
 ```
 
-Next steps when traffic grows: Redis rate-limit store across replicas, dedicated ingest worker (BullMQ/Inngest), horizontal API replicas behind a load balancer.
+Next steps when traffic grows: always-on Redis + multiple API replicas, horizontal worker replicas, object-storage CDN for uploads.
 
 ## Demo flow
 
@@ -116,6 +130,8 @@ Embed smoke test: open http://localhost:5173/embed-demo.html with your `pk_…` 
 | `npm run build:widget` | Write `backend/public/widget.js` |
 | `npm run build` | Production builds |
 | `npm run load:smoke` | Concurrent `/health` `/ready` `/metrics` latency sample |
+| `npm run test -w knowbase-backend` | Backend unit + ops inject tests |
+| `npm run worker -w knowbase-backend` | Dedicated Postgres ingest worker |
 
 ## Notes
 

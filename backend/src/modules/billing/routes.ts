@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../../lib/supabase.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { planFromStripePrice, type PlanId, PLANS } from '../../lib/plans.js'
 import { getMessageUsage, getUserPlan, invalidateUserPlanCache } from '../../lib/usage.js'
+import { claimStripeEvent } from '../../lib/stripe-events.js'
 
 const checkoutSchema = z.object({
   plan: z.enum(['pro', 'business']),
@@ -138,6 +139,11 @@ export async function billingRoutes(app: FastifyInstance) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Webhook error'
       return reply.code(400).send({ error: message })
+    }
+
+    const firstTime = await claimStripeEvent(event.id, event.type)
+    if (!firstTime) {
+      return { received: true, duplicate: true }
     }
 
     switch (event.type) {

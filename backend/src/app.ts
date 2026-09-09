@@ -4,13 +4,15 @@ import helmet from '@fastify/helmet'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { config } from './config.js'
 import { registerErrorHandler } from './plugins/error-handler.js'
 import { registerObservability } from './plugins/observability.js'
-import { getIngestStats } from './lib/ingest-queue.js'
+import { getIngestStats } from './lib/ingest-worker.js'
 import { getOpenAIGateStats } from './lib/openai-gate.js'
 import { getRuntimeMetrics, isDraining } from './lib/runtime-metrics.js'
+import { getRedis } from './lib/redis.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { botsRoutes } from './modules/bots/routes.js'
 import { docsRoutes } from './modules/docs/routes.js'
@@ -29,8 +31,26 @@ function isWidgetPath(url: string): boolean {
 }
 
 export async function buildApp() {
+  await getRedis()
+
   const app = Fastify({
-    logger: true,
+    logger: {
+      level: 'info',
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: request.url,
+            requestId: request.id,
+          }
+        },
+      },
+    },
+    genReqId: (req) => {
+      const incoming = req.headers['x-request-id']
+      return typeof incoming === 'string' && incoming.length > 0 ? incoming : randomUUID()
+    },
+    requestIdHeader: 'x-request-id',
     bodyLimit: 1 * 1024 * 1024,
     requestTimeout: 120_000,
     connectionTimeout: 15_000,
@@ -105,8 +125,9 @@ export async function buildApp() {
   app.get('/metrics', async () => ({
     service: 'knowbase-api',
     ...getRuntimeMetrics(),
-    ingest: getIngestStats(),
+    ingest: await getIngestStats(),
     openaiGate: getOpenAIGateStats(),
+    redis: Boolean(config.REDIS_URL),
   }))
 
   await app.register(authRoutes, { prefix: '/v1/auth' })

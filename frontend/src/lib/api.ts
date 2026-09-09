@@ -35,6 +35,8 @@ export async function api<T>(
     ...options,
     headers,
     body,
+  }).catch(() => {
+    throw new ApiError(503, 'Network error — please retry')
   })
 
   const text = await res.text()
@@ -55,6 +57,11 @@ export async function api<T>(
     throw new ApiError(res.status, message)
   }
   return data as T
+}
+
+/** Accept either a bare array or `{ items, next_cursor }` page payloads. */
+export function unwrapPage<T>(data: T[] | { items: T[]; next_cursor?: string | null }): T[] {
+  return Array.isArray(data) ? data : data.items
 }
 
 export type ChatStreamEvent =

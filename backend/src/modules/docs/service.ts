@@ -1,26 +1,43 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
-import { embedTexts } from '../../lib/openai.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { assertCanUploadDoc } from '../../lib/usage.js'
-import { canAcceptIngest, scheduleIngest } from '../../lib/ingest-queue.js'
+import { canAcceptIngestJob, enqueueIngestJob } from '../../lib/ingest-jobs.js'
+import { clampLimit } from '../../lib/pagination.js'
 import { getBot } from '../bots/service.js'
-import { extractText } from './extract.js'
-import { chunkText } from './chunk.js'
 import { assertFileLooksValid } from './formats.js'
 
-const CHUNK_INSERT_BATCH = 100
+const DOC_SELECT =
+  'id, bot_id, filename, status, bytes, error_message, created_at, updated_at'
 
-export async function listDocuments(userId: string, botId: string) {
+export async function listDocuments(
+  userId: string,
+  botId: string,
+  opts?: { limit?: number; cursor?: string | null },
+) {
   await getBot(userId, botId)
-  const { data, error } = await supabaseAdmin
+  const limit = clampLimit(opts?.limit, 50, 100)
+
+  let query = supabaseAdmin
     .from('documents')
-    .select('id, bot_id, filename, status, bytes, error_message, created_at, updated_at')
+    .select(DOC_SELECT)
     .eq('bot_id', botId)
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(limit + 1)
 
+  if (opts?.cursor) {
+    query = query.lt('created_at', opts.cursor)
+  }
+
+  const { data, error } = await query
   if (error) throw httpError(500, 'Failed to list documents')
-  return data
+
+  const rows = data ?? []
+  const hasMore = rows.length > limit
+  const items = hasMore ? rows.slice(0, limit) : rows
+  return {
+    items,
+    next_cursor: hasMore ? items[items.length - 1]?.created_at ?? null : null,
+  }
 }
 
 export async function uploadAndIngest(
@@ -42,7 +59,8 @@ export async function uploadAndIngest(
 
   await assertCanUploadDoc(userId, botId, buffer.byteLength)
 
-  if (!canAcceptIngest()) {
+  const accepted = await canAcceptIngestJob()
+  if (!accepted) {
     throw httpError(503, 'Document processing queue is full. Please retry in a moment.')
   }
 
@@ -64,7 +82,7 @@ export async function uploadAndIngest(
       status: 'processing',
       bytes: buffer.byteLength,
     })
-    .select('*')
+    .select(DOC_SELECT)
     .single()
 
   if (insertError) {
@@ -72,74 +90,25 @@ export async function uploadAndIngest(
     throw httpError(500, 'Failed to create document record')
   }
 
-  // Return immediately; extract + embed off the request path (bounded concurrency)
-  scheduleIngest(async () => {
-    try {
-      await ingestDocument(doc.id, botId, filename, buffer)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ingest failed'
-      await supabaseAdmin
-        .from('documents')
-        .update({ status: 'failed', error_message: message.slice(0, 500) })
-        .eq('id', doc.id)
-    }
-  })
+  try {
+    await enqueueIngestJob(doc.id)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to enqueue ingest'
+    await supabaseAdmin
+      .from('documents')
+      .update({ status: 'failed', error_message: message.slice(0, 500) })
+      .eq('id', doc.id)
+    throw httpError(500, 'Failed to queue document for processing (run migration 004?)')
+  }
 
   return doc
-}
-
-async function ingestDocument(documentId: string, botId: string, filename: string, buffer: Buffer) {
-  const text = await extractText(filename, buffer)
-  if (!text.trim()) {
-    throw new Error('No extractable text found in file')
-  }
-
-  const chunks = chunkText(text)
-  if (chunks.length === 0) throw new Error('Document produced no chunks')
-
-  const batchSize = 32
-  const rows: Array<{
-    document_id: string
-    bot_id: string
-    content: string
-    embedding: number[]
-    metadata: Record<string, unknown>
-    chunk_index: number
-  }> = []
-
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize)
-    const embeddings = await embedTexts(batch)
-    batch.forEach((content, j) => {
-      const index = i + j
-      rows.push({
-        document_id: documentId,
-        bot_id: botId,
-        content,
-        embedding: `[${embeddings[j].join(',')}]` as unknown as number[],
-        metadata: { filename, chunk_index: index },
-        chunk_index: index,
-      })
-    })
-  }
-
-  for (let i = 0; i < rows.length; i += CHUNK_INSERT_BATCH) {
-    const slice = rows.slice(i, i + CHUNK_INSERT_BATCH)
-    const { error } = await supabaseAdmin.from('chunks').insert(slice)
-    if (error) throw new Error(error.message)
-  }
-
-  await supabaseAdmin
-    .from('documents')
-    .update({ status: 'ready', error_message: null })
-    .eq('id', documentId)
 }
 
 export async function deleteDocument(userId: string, botId: string, documentId: string) {
   await getBot(userId, botId)
   const { data: doc, error } = await supabaseAdmin
     .from('documents')
-    .select('*')
+    .select('id, storage_path')
     .eq('id', documentId)
     .eq('bot_id', botId)
     .maybeSingle()
@@ -158,7 +127,7 @@ export async function retryDocument(userId: string, botId: string, documentId: s
   await getBot(userId, botId)
   const { data: doc, error } = await supabaseAdmin
     .from('documents')
-    .select('*')
+    .select(DOC_SELECT)
     .eq('id', documentId)
     .eq('bot_id', botId)
     .maybeSingle()
@@ -169,37 +138,32 @@ export async function retryDocument(userId: string, botId: string, documentId: s
     throw httpError(400, 'Only failed documents can be retried')
   }
 
-  if (!canAcceptIngest()) {
+  const accepted = await canAcceptIngestJob()
+  if (!accepted) {
     throw httpError(503, 'Document processing queue is full. Please retry in a moment.')
   }
 
-  const { data: file, error: downloadError } = await supabaseAdmin.storage
-    .from('documents')
-    .download(doc.storage_path)
-
-  if (downloadError || !file) {
-    throw httpError(500, downloadError?.message || 'Could not download original file')
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer())
   await supabaseAdmin.from('chunks').delete().eq('document_id', documentId)
   await supabaseAdmin
     .from('documents')
     .update({ status: 'processing', error_message: null })
     .eq('id', documentId)
 
-  scheduleIngest(async () => {
-    try {
-      await ingestDocument(doc.id, botId, doc.filename, buffer)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ingest failed'
-      await supabaseAdmin
-        .from('documents')
-        .update({ status: 'failed', error_message: message.slice(0, 500) })
-        .eq('id', documentId)
-    }
-  })
+  try {
+    await enqueueIngestJob(documentId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to enqueue ingest'
+    await supabaseAdmin
+      .from('documents')
+      .update({ status: 'failed', error_message: message.slice(0, 500) })
+      .eq('id', documentId)
+    throw httpError(500, message)
+  }
 
-  const { data: refreshed } = await supabaseAdmin.from('documents').select('*').eq('id', doc.id).single()
+  const { data: refreshed } = await supabaseAdmin
+    .from('documents')
+    .select(DOC_SELECT)
+    .eq('id', documentId)
+    .single()
   return refreshed ?? { ...doc, status: 'processing', error_message: null }
 }

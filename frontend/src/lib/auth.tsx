@@ -4,12 +4,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import type { MeResponse } from '../lib/types'
 
 type AuthState = {
@@ -27,45 +28,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [me, setMe] = useState<MeResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const meInflight = useRef<Promise<void> | null>(null)
+  const lastFetchedTokenRef = useRef<string | null>(null)
 
   const refreshMe = useCallback(async () => {
-    try {
-      const data = await api<MeResponse>('/v1/auth/me')
-      setMe(data)
-    } catch {
-      setMe(null)
-    }
+    if (meInflight.current) return meInflight.current
+
+    meInflight.current = (async () => {
+      try {
+        const data = await api<MeResponse>('/v1/auth/me')
+        setMe(data)
+      } catch (err) {
+        // Keep last-known profile on transient/network blips; only clear on auth failure
+        if (err instanceof ApiError && err.status === 401) {
+          setMe(null)
+        }
+      } finally {
+        meInflight.current = null
+      }
+    })()
+
+    return meInflight.current
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let mounted = true
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
       setSession(data.session)
       setLoading(false)
     })
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      if (!mounted) return
       setSession(next)
-      // Avoid hammering /me during recovery before password is set
       if (event === 'PASSWORD_RECOVERY') {
         setMe(null)
+        lastFetchedTokenRef.current = null
       }
     })
-    return () => sub.subscription.unsubscribe()
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
+  const accessToken = session?.access_token ?? null
+
   useEffect(() => {
-    if (session) {
-      // Skip profile fetch on recovery-only pages until user finishes reset
-      if (window.location.pathname === '/reset-password') return
-      void refreshMe()
-    } else {
+    if (!accessToken) {
+      lastFetchedTokenRef.current = null
       setMe(null)
+      return
     }
-  }, [session, refreshMe])
+    if (window.location.pathname === '/reset-password') return
+    // Same JWT already fetched → skip (getSession + INITIAL_SESSION / Strict Mode)
+    if (lastFetchedTokenRef.current === accessToken) return
+    lastFetchedTokenRef.current = accessToken
+    void refreshMe()
+  }, [accessToken, refreshMe])
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setMe(null)
+    lastFetchedTokenRef.current = null
   }, [])
 
   const value = useMemo(

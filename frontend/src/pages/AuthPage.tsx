@@ -153,7 +153,7 @@ export function AuthPage() {
         ) : null}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         {info ? <p className="text-sm text-teal-dark">{info}</p> : null}
-        <Button type="submit" className="mt-2 w-full py-3" disabled={busy}>
+        <Button type="submit" className="mt-2 w-full py-3 cursor-pointer disabled:cursor-not-allowed" disabled={busy}>
           {busy
             ? 'Please wait…'
             : mode === 'forgot'

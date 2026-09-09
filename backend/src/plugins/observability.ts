@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify'
-import { randomUUID } from 'node:crypto'
 import {
   isDraining,
   onRequestEnd,
@@ -12,10 +11,7 @@ export async function registerObservability(app: FastifyInstance) {
       return reply.code(503).send({ error: 'Server is shutting down' })
     }
 
-    const incoming = request.headers['x-request-id']
-    const requestId = typeof incoming === 'string' && incoming.length > 0 ? incoming : randomUUID()
-    request.headers['x-request-id'] = requestId
-    reply.header('x-request-id', requestId)
+    reply.header('x-request-id', request.id)
     ;(request as { startedAt?: number }).startedAt = Date.now()
     onRequestStart()
   })

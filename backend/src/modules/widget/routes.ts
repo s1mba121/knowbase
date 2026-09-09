@@ -5,6 +5,7 @@ import { getBotByPublicKey } from '../bots/service.js'
 import { runRagChat } from '../chat/service.js'
 import { getUserPlan } from '../../lib/usage.js'
 import { clientIp } from '../../plugins/error-handler.js'
+import { buildRateLimitOptions } from '../../lib/rate-limit.js'
 
 const widgetChatSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -13,20 +14,19 @@ const widgetChatSchema = z.object({
 })
 
 export async function widgetRoutes(app: FastifyInstance) {
-  await app.register(rateLimit, {
-    global: false,
-    keyGenerator: (request: FastifyRequest) => {
-      const params = request.params as { publicKey?: string }
-      return `${clientIp(request)}:${params.publicKey || 'unknown'}`
-    },
-    errorResponseBuilder: (
-      _request: FastifyRequest,
-      context: { ttl: number },
-    ) => ({
-      statusCode: 429,
-      error: `Too many requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+  await app.register(
+    rateLimit,
+    await buildRateLimitOptions({
+      keyGenerator: (request: FastifyRequest) => {
+        const params = request.params as { publicKey?: string }
+        return `${clientIp(request)}:${params.publicKey || 'unknown'}`
+      },
+      errorResponseBuilder: (_request: FastifyRequest, context: { ttl: number }) => ({
+        statusCode: 429,
+        error: `Too many requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+      }),
     }),
-  })
+  )
 
   app.get(
     '/:publicKey/config',

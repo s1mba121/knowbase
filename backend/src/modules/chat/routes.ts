@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit'
 import { authGuard } from '../../plugins/auth.js'
 import { config } from '../../config.js'
 import { clientIp } from '../../plugins/error-handler.js'
+import { buildRateLimitOptions } from '../../lib/rate-limit.js'
 import { chatSchema } from './schema.js'
 import * as chat from './service.js'
 
@@ -11,20 +12,22 @@ const APP_ORIGINS = new Set(
 )
 
 export async function chatRoutes(app: FastifyInstance) {
-  await app.register(rateLimit, {
-    global: false,
-    keyGenerator: (request: FastifyRequest) => {
-      const auth = request.headers.authorization
-      if (typeof auth === 'string' && auth.length > 16) {
-        return `tok:${auth.slice(-32)}`
-      }
-      return `ip:${clientIp(request)}`
-    },
-    errorResponseBuilder: (_request: FastifyRequest, context: { ttl: number }) => ({
-      statusCode: 429,
-      error: `Too many chat requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+  await app.register(
+    rateLimit,
+    await buildRateLimitOptions({
+      keyGenerator: (request: FastifyRequest) => {
+        const auth = request.headers.authorization
+        if (typeof auth === 'string' && auth.length > 16) {
+          return `tok:${auth.slice(-32)}`
+        }
+        return `ip:${clientIp(request)}`
+      },
+      errorResponseBuilder: (_request: FastifyRequest, context: { ttl: number }) => ({
+        statusCode: 429,
+        error: `Too many chat requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+      }),
     }),
-  })
+  )
 
   app.addHook('preHandler', authGuard)
 
@@ -97,7 +100,11 @@ export async function chatRoutes(app: FastifyInstance) {
       botId: string
       conversationId: string
     }
-    return chat.getConversationMessages(request.user.id, botId, conversationId)
+    const query = request.query as { limit?: string; cursor?: string }
+    return chat.getConversationMessages(request.user.id, botId, conversationId, {
+      limit: query.limit ? Number(query.limit) : undefined,
+      cursor: query.cursor || null,
+    })
   })
 
   app.delete('/:botId/conversations/:conversationId', async (request) => {

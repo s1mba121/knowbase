@@ -14,7 +14,8 @@
     "build": "npm run build -w knowbase-frontend && npm run build:widget -w knowbase-frontend && npm run build -w knowbase-backend",
     "build:widget": "npm run build:widget -w knowbase-frontend",
     "typecheck": "npm run typecheck -w knowbase-backend --if-present && npm run build -w knowbase-frontend --if-present",
-    "load:smoke": "node scripts/load-smoke.mjs"
+    "load:smoke": "node scripts/load-smoke.mjs",
+    "test": "npm run test -w knowbase-backend"
   },
   "engines": {
     "node": ">=20"

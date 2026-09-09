@@ -7,7 +7,11 @@ export async function docsRoutes(app: FastifyInstance) {
 
   app.get('/:botId/documents', async (request) => {
     const { botId } = request.params as { botId: string }
-    return docs.listDocuments(request.user.id, botId)
+    const query = request.query as { limit?: string; cursor?: string }
+    return docs.listDocuments(request.user.id, botId, {
+      limit: query.limit ? Number(query.limit) : undefined,
+      cursor: query.cursor || null,
+    })
   })
 
   app.post('/:botId/documents', async (request, reply) => {

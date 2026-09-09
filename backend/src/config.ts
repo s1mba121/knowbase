@@ -7,10 +7,8 @@ const envSchema = z
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     BACKEND_URL: z.string().default('http://localhost:3001'),
     SUPABASE_URL: z.string().min(1),
-    // Legacy names
     SUPABASE_ANON_KEY: z.string().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-    // New Supabase dashboard names (2025+)
     SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
     SUPABASE_SECRET_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().min(1),
@@ -18,6 +16,16 @@ const envSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
     STRIPE_PRICE_PRO: z.string().optional().default(''),
     STRIPE_PRICE_BUSINESS: z.string().optional().default(''),
+    REDIS_URL: z.string().optional().default(''),
+    INGEST_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(2),
+    INGEST_MAX_QUEUED: z.coerce.number().int().min(1).max(500).default(20),
+    OPENAI_MAX_INFLIGHT: z.coerce.number().int().min(1).max(64).default(8),
+    /** Run DB ingest poller inside the API process (disable if using a dedicated worker). */
+    INGEST_EMBEDDED_WORKER: z
+      .string()
+      .optional()
+      .default('true')
+      .transform((v) => !['0', 'false', 'no'].includes(v.toLowerCase())),
   })
   .superRefine((val, ctx) => {
     if (!val.SUPABASE_ANON_KEY && !val.SUPABASE_PUBLISHABLE_KEY) {
@@ -55,6 +63,11 @@ const envSchema = z
     STRIPE_WEBHOOK_SECRET: val.STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO: val.STRIPE_PRICE_PRO,
     STRIPE_PRICE_BUSINESS: val.STRIPE_PRICE_BUSINESS,
+    REDIS_URL: val.REDIS_URL,
+    INGEST_CONCURRENCY: val.INGEST_CONCURRENCY,
+    INGEST_MAX_QUEUED: val.INGEST_MAX_QUEUED,
+    OPENAI_MAX_INFLIGHT: val.OPENAI_MAX_INFLIGHT,
+    INGEST_EMBEDDED_WORKER: val.INGEST_EMBEDDED_WORKER,
   }))
 
 const parsed = envSchema.safeParse(process.env)

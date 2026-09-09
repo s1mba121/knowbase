@@ -33,7 +33,7 @@ function invalidatePublicBotCache(publicKeyValue?: string | null) {
 export async function listBots(userId: string) {
   const { data, error } = await supabaseAdmin
     .from('bots')
-    .select('*')
+    .select(BOT_PUBLIC_SELECT)
     .eq('owner_id', userId)
     .order('created_at', { ascending: false })
 
@@ -44,7 +44,7 @@ export async function listBots(userId: string) {
 export async function getBot(userId: string, botId: string) {
   const { data, error } = await supabaseAdmin
     .from('bots')
-    .select('*')
+    .select(BOT_PUBLIC_SELECT)
     .eq('id', botId)
     .eq('owner_id', userId)
     .maybeSingle()

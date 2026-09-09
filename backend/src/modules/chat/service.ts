@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { embedQuery, openai, CHAT_MODEL } from '../../lib/openai.js'
 import { acquireOpenAI, withOpenAI } from '../../lib/openai-gate.js'
+import { withRetry } from '../../lib/retry.js'
+import { clampLimit } from '../../lib/pagination.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { consumeMessageOrThrow } from '../../lib/usage.js'
 import { getBot } from '../bots/service.js'
@@ -187,11 +189,15 @@ export async function runRagChat(opts: {
   const prepared = await prepareRag(opts)
 
   const completion = await withOpenAI(() =>
-    openai.chat.completions.create({
-      model: CHAT_MODEL,
-      temperature: 0.2,
-      messages: prepared.llmMessages,
-    }),
+    withRetry(
+      () =>
+        openai.chat.completions.create({
+          model: CHAT_MODEL,
+          temperature: 0.2,
+          messages: prepared.llmMessages,
+        }),
+      { label: 'chat.completions', retries: 3 },
+    ),
   )
 
   const answer = completion.choices[0]?.message?.content?.trim() || "I couldn't generate an answer."
@@ -238,12 +244,16 @@ export async function* streamRagChat(opts: {
   const releaseOpenAI = await acquireOpenAI()
   let answer = ''
   try {
-    const stream = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      temperature: 0.2,
-      stream: true,
-      messages: prepared.llmMessages,
-    })
+    const stream = await withRetry(
+      () =>
+        openai.chat.completions.create({
+          model: CHAT_MODEL,
+          temperature: 0.2,
+          stream: true,
+          messages: prepared.llmMessages,
+        }),
+      { label: 'chat.completions.stream', retries: 2 },
+    )
 
     for await (const part of stream) {
       const delta = part.choices[0]?.delta?.content
@@ -350,7 +360,12 @@ export async function listConversations(
   )
 }
 
-export async function getConversationMessages(userId: string, botId: string, conversationId: string) {
+export async function getConversationMessages(
+  userId: string,
+  botId: string,
+  conversationId: string,
+  opts?: { limit?: number; cursor?: string | null },
+) {
   await getBot(userId, botId)
   const { data: conv } = await supabaseAdmin
     .from('conversations')
@@ -360,15 +375,29 @@ export async function getConversationMessages(userId: string, botId: string, con
     .maybeSingle()
   if (!conv) throw httpError(404, 'Conversation not found')
 
-  const { data, error } = await supabaseAdmin
+  const limit = clampLimit(opts?.limit, 100, 200)
+
+  let query = supabaseAdmin
     .from('messages')
     .select('id, role, content, sources, created_at')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
-    .limit(200)
+    .limit(limit + 1)
 
+  if (opts?.cursor) {
+    query = query.gt('created_at', opts.cursor)
+  }
+
+  const { data, error } = await query
   if (error) throw httpError(500, error.message)
-  return data
+
+  const rows = data ?? []
+  const hasMore = rows.length > limit
+  const items = hasMore ? rows.slice(0, limit) : rows
+  return {
+    items,
+    next_cursor: hasMore ? items[items.length - 1]?.created_at ?? null : null,
+  }
 }
 
 export async function deleteConversation(userId: string, botId: string, conversationId: string) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, unwrapPage } from '../lib/api'
 import type { ChatSource } from '../lib/types'
 import { Badge } from './ui'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -63,7 +63,11 @@ export function WidgetInbox({ botId }: { botId: string }) {
     setActiveId(id)
     setLoadingThread(true)
     try {
-      const data = await api<StoredMessage[]>(`/v1/bots/${botId}/conversations/${id}`)
+      const data = unwrapPage(
+        await api<StoredMessage[] | { items: StoredMessage[] }>(
+          `/v1/bots/${botId}/conversations/${id}`,
+        ),
+      )
       setMessages(data.filter((m) => m.role === 'user' || m.role === 'assistant'))
     } catch (err) {
       toast.error('Load failed', getErrorMessage(err))

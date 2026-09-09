@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, streamChat, ApiError } from '../lib/api'
+import { api, streamChat, ApiError, unwrapPage } from '../lib/api'
 import type { ChatSource } from '../lib/types'
 import { Button } from './ui'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -116,7 +116,11 @@ export function ChatPanel({
     setError(null)
     setLimitError(null)
     try {
-      const rows = await api<StoredMessage[]>(`/v1/bots/${botId}/conversations/${id}`)
+      const rows = unwrapPage(
+        await api<StoredMessage[] | { items: StoredMessage[] }>(
+          `/v1/bots/${botId}/conversations/${id}`,
+        ),
+      )
       setConversationId(id)
       setMessages(
         rows

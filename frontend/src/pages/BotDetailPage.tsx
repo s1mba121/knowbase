@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, API_URL } from '../lib/api'
+import { api, API_URL, unwrapPage } from '../lib/api'
 import type { Bot, DocumentRow } from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { Badge, Button, Input, TextArea } from '../components/ui'
@@ -43,24 +43,31 @@ export function BotDetailPage() {
   const [copied, setCopied] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const prevStatusRef = useRef<Map<string, DocumentRow['status']>>(new Map())
+  const loadSeq = useRef(0)
 
   async function load() {
+    const seq = ++loadSeq.current
     try {
       const [b, d, embed] = await Promise.all([
         api<Bot>(`/v1/bots/${botId}`),
-        api<DocumentRow[]>(`/v1/bots/${botId}/documents`),
+        api<{ items: DocumentRow[] } | DocumentRow[]>(`/v1/bots/${botId}/documents`),
         api<{ snippet: string }>(`/v1/bots/${botId}/embed`),
       ])
+      if (seq !== loadSeq.current) return
       setBot(b)
-      setDocs(d)
+      setDocs(unwrapPage(d))
       setSnippet(embed.snippet)
     } catch (err) {
+      if (seq !== loadSeq.current) return
       setError(getErrorMessage(err, 'Failed to load bot'))
     }
   }
 
   useEffect(() => {
     void load()
+    return () => {
+      loadSeq.current += 1
+    }
   }, [botId])
 
   useEffect(() => {
@@ -85,17 +92,20 @@ export function BotDetailPage() {
     prevStatusRef.current = new Map(docs.map((d) => [d.id, d.status]))
   }, [docs, toast])
 
-  // Poll while any doc is still extracting / embedding
+  const indexingCount = docs.filter(
+    (d) => d.status === 'processing' || d.status === 'pending',
+  ).length
+
+  // Poll while indexing — depend on boolean-ish count so interval is not reset every tick
   useEffect(() => {
-    const busy = docs.some((d) => d.status === 'processing' || d.status === 'pending')
-    if (!busy) return
+    if (indexingCount === 0) return
     const id = window.setInterval(() => {
-      void api<DocumentRow[]>(`/v1/bots/${botId}/documents`)
-        .then(setDocs)
+      void api<{ items: DocumentRow[] } | DocumentRow[]>(`/v1/bots/${botId}/documents`)
+        .then((d) => setDocs(unwrapPage(d)))
         .catch(() => {})
     }, 2500)
     return () => window.clearInterval(id)
-  }, [botId, docs])
+  }, [botId, indexingCount])
 
   async function onUpload(file: File) {
     setUploading(true)
@@ -233,7 +243,7 @@ export function BotDetailPage() {
   }
 
   const readyDocs = docs.filter((d) => d.status === 'ready').length
-  const indexingDocs = docs.filter((d) => d.status === 'processing' || d.status === 'pending').length
+  const indexingDocs = indexingCount
   const hasReadyDocs = readyDocs > 0
   const previewSrc = `${window.location.origin}/embed-preview.html?key=${encodeURIComponent(bot.public_key)}&api=${encodeURIComponent(API_URL)}`
 
