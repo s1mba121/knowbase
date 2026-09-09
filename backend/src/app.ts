@@ -7,6 +7,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config } from './config.js'
 import { registerErrorHandler } from './plugins/error-handler.js'
+import { registerObservability } from './plugins/observability.js'
+import { getIngestStats } from './lib/ingest-queue.js'
+import { getOpenAIGateStats } from './lib/openai-gate.js'
+import { getRuntimeMetrics, isDraining } from './lib/runtime-metrics.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { botsRoutes } from './modules/bots/routes.js'
 import { docsRoutes } from './modules/docs/routes.js'
@@ -28,9 +32,12 @@ export async function buildApp() {
   const app = Fastify({
     logger: true,
     bodyLimit: 1 * 1024 * 1024,
+    requestTimeout: 120_000,
+    connectionTimeout: 15_000,
   })
 
   registerErrorHandler(app)
+  await registerObservability(app)
 
   await app.register(helmet, {
     global: true,
@@ -82,7 +89,25 @@ export async function buildApp() {
     }
   })
 
-  app.get('/health', async () => ({ ok: true, service: 'knowbase-api' }))
+  app.get('/health', async () => ({
+    ok: true,
+    service: 'knowbase-api',
+    draining: isDraining(),
+  }))
+
+  app.get('/ready', async (_request, reply) => {
+    if (isDraining()) {
+      return reply.code(503).send({ ok: false, reason: 'draining' })
+    }
+    return { ok: true, service: 'knowbase-api' }
+  })
+
+  app.get('/metrics', async () => ({
+    service: 'knowbase-api',
+    ...getRuntimeMetrics(),
+    ingest: getIngestStats(),
+    openaiGate: getOpenAIGateStats(),
+  }))
 
   await app.register(authRoutes, { prefix: '/v1/auth' })
   await app.register(botsRoutes, { prefix: '/v1/bots' })

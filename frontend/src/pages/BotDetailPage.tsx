@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, API_URL } from '../lib/api'
 import type { Bot, DocumentRow } from '../lib/types'
@@ -18,6 +18,13 @@ type PendingDelete =
   | { type: 'bot' }
   | null
 
+function docStatusLabel(status: DocumentRow['status']) {
+  if (status === 'processing' || status === 'pending') return 'Indexing…'
+  if (status === 'ready') return 'Ready'
+  if (status === 'failed') return 'Failed'
+  return status
+}
+
 export function BotDetailPage() {
   const { botId = '' } = useParams()
   const { me, refreshMe } = useAuth()
@@ -35,6 +42,7 @@ export function BotDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const prevStatusRef = useRef<Map<string, DocumentRow['status']>>(new Map())
 
   async function load() {
     try {
@@ -54,6 +62,28 @@ export function BotDetailPage() {
   useEffect(() => {
     void load()
   }, [botId])
+
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    for (const d of docs) {
+      const before = prev.get(d.id)
+      if (
+        before &&
+        (before === 'processing' || before === 'pending') &&
+        d.status === 'ready'
+      ) {
+        toast.success('Indexed', `${d.filename} is ready for chat.`)
+      }
+      if (
+        before &&
+        (before === 'processing' || before === 'pending') &&
+        d.status === 'failed'
+      ) {
+        toast.error('Indexing failed', d.error_message || d.filename)
+      }
+    }
+    prevStatusRef.current = new Map(docs.map((d) => [d.id, d.status]))
+  }, [docs, toast])
 
   // Poll while any doc is still extracting / embedding
   useEffect(() => {
@@ -79,7 +109,7 @@ export function BotDetailPage() {
       await load()
       await refreshMe()
       toast.dismiss(toastId)
-      toast.success('Uploaded', `${file.name} is processing in the background.`)
+      toast.success('Queued', `${file.name} is indexing in the background.`)
     } catch (err) {
       const message = getErrorMessage(err, 'Upload failed')
       toast.dismiss(toastId)
@@ -203,6 +233,7 @@ export function BotDetailPage() {
   }
 
   const readyDocs = docs.filter((d) => d.status === 'ready').length
+  const indexingDocs = docs.filter((d) => d.status === 'processing' || d.status === 'pending').length
   const hasReadyDocs = readyDocs > 0
   const previewSrc = `${window.location.origin}/embed-preview.html?key=${encodeURIComponent(bot.public_key)}&api=${encodeURIComponent(API_URL)}`
 
@@ -227,7 +258,8 @@ export function BotDetailPage() {
           </Badge>
         </div>
         <p className="mt-2 text-sm text-ink/50">
-          {readyDocs} ready doc{readyDocs === 1 ? '' : 's'} · train, test, then embed
+          {readyDocs} ready · {indexingDocs > 0 ? `${indexingDocs} indexing · ` : ''}
+          train, test, then embed
         </p>
       </div>
 
@@ -256,7 +288,8 @@ export function BotDetailPage() {
           <div className="rounded-2xl border border-line/80 bg-white/80 p-5 sm:p-6">
             <h2 className="font-display text-2xl tracking-tight">Upload knowledge</h2>
             <p className="mt-1 text-sm text-ink/55">
-              Drop a help article to train this bot. Processing starts immediately.
+              Files are accepted immediately, then chunked and embedded in a bounded background queue
+              so chat stays responsive under load.
             </p>
             <div className="mt-4">
               <DropZone busy={uploading} onFile={(file) => void onUpload(file)} />
@@ -274,6 +307,18 @@ export function BotDetailPage() {
             </p>
           </div>
 
+          {indexingDocs > 0 ? (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+              <span className="kb-pulse-soft mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+              <p className="leading-relaxed">
+                <span className="font-semibold">
+                  {indexingDocs} document{indexingDocs === 1 ? '' : 's'} indexing
+                </span>
+                — extract → embed → vector index. Playground answers update as files become ready.
+              </p>
+            </div>
+          ) : null}
+
           <div className="overflow-hidden rounded-2xl border border-line/80 bg-white/90">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-line/70 bg-mist/40 text-xs uppercase tracking-wide text-ink/45">
@@ -285,15 +330,19 @@ export function BotDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {docs.map((d) => (
+                {docs.map((d) => {
+                  const indexing = d.status === 'processing' || d.status === 'pending'
+                  return (
                   <tr key={d.id} className="border-b border-line/60">
                     <td className="px-4 py-3 font-medium text-ink">{d.filename}</td>
                     <td className="px-4 py-3">
-                      <Badge
-                        tone={d.status === 'ready' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}
-                      >
-                        {d.status}
-                      </Badge>
+                      <span className={indexing ? 'kb-pulse-soft inline-flex' : 'inline-flex'}>
+                        <Badge
+                          tone={d.status === 'ready' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}
+                        >
+                          {docStatusLabel(d.status)}
+                        </Badge>
+                      </span>
                       {d.error_message ? (
                         <span className="ml-2 text-xs text-red-600">{d.error_message}</span>
                       ) : null}
@@ -321,7 +370,8 @@ export function BotDetailPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
                 {docs.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-10 text-center text-ink/45">

@@ -1,6 +1,8 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import rateLimit from '@fastify/rate-limit'
 import { authGuard } from '../../plugins/auth.js'
 import { config } from '../../config.js'
+import { clientIp } from '../../plugins/error-handler.js'
 import { chatSchema } from './schema.js'
 import * as chat from './service.js'
 
@@ -9,48 +11,79 @@ const APP_ORIGINS = new Set(
 )
 
 export async function chatRoutes(app: FastifyInstance) {
+  await app.register(rateLimit, {
+    global: false,
+    keyGenerator: (request: FastifyRequest) => {
+      const auth = request.headers.authorization
+      if (typeof auth === 'string' && auth.length > 16) {
+        return `tok:${auth.slice(-32)}`
+      }
+      return `ip:${clientIp(request)}`
+    },
+    errorResponseBuilder: (_request: FastifyRequest, context: { ttl: number }) => ({
+      statusCode: 429,
+      error: `Too many chat requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+    }),
+  })
+
   app.addHook('preHandler', authGuard)
 
-  app.post('/:botId/chat', async (request) => {
-    const { botId } = request.params as { botId: string }
-    const body = chatSchema.parse(request.body)
-    return chat.chatInApp(request.user.id, botId, body.message, body.conversation_id)
-  })
+  app.post(
+    '/:botId/chat',
+    {
+      config: {
+        rateLimit: { max: 40, timeWindow: '1 minute' },
+      },
+    },
+    async (request) => {
+      const { botId } = request.params as { botId: string }
+      const body = chatSchema.parse(request.body)
+      return chat.chatInApp(request.user.id, botId, body.message, body.conversation_id)
+    },
+  )
 
-  app.post('/:botId/chat/stream', async (request, reply) => {
-    const { botId } = request.params as { botId: string }
-    const body = chatSchema.parse(request.body)
-    const origin = request.headers.origin
-    const allowOrigin =
-      typeof origin === 'string' && APP_ORIGINS.has(origin) ? origin : config.FRONTEND_URL
+  app.post(
+    '/:botId/chat/stream',
+    {
+      config: {
+        rateLimit: { max: 40, timeWindow: '1 minute' },
+      },
+    },
+    async (request, reply) => {
+      const { botId } = request.params as { botId: string }
+      const body = chatSchema.parse(request.body)
+      const origin = request.headers.origin
+      const allowOrigin =
+        typeof origin === 'string' && APP_ORIGINS.has(origin) ? origin : config.FRONTEND_URL
 
-    reply.hijack()
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': allowOrigin,
-      'Access-Control-Allow-Credentials': 'true',
-      Vary: 'Origin',
-    })
+      reply.hijack()
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': allowOrigin,
+        'Access-Control-Allow-Credentials': 'true',
+        Vary: 'Origin',
+      })
 
-    try {
-      for await (const event of chat.streamChatInApp(
-        request.user.id,
-        botId,
-        body.message,
-        body.conversation_id,
-      )) {
-        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`)
+      try {
+        for await (const event of chat.streamChatInApp(
+          request.user.id,
+          botId,
+          body.message,
+          body.conversation_id,
+        )) {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Chat failed'
+        const status = (err as { statusCode?: number }).statusCode
+        reply.raw.write(`data: ${JSON.stringify({ type: 'error', error: message, status })}\n\n`)
+      } finally {
+        reply.raw.end()
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Chat failed'
-      const status = (err as { statusCode?: number }).statusCode
-      reply.raw.write(`data: ${JSON.stringify({ type: 'error', error: message, status })}\n\n`)
-    } finally {
-      reply.raw.end()
-    }
-  })
+    },
+  )
 
   app.get('/:botId/conversations', async (request) => {
     const { botId } = request.params as { botId: string }

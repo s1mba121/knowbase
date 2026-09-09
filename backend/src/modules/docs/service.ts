@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../../lib/supabase.js'
 import { embedTexts } from '../../lib/openai.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { assertCanUploadDoc } from '../../lib/usage.js'
-import { scheduleIngest } from '../../lib/ingest-queue.js'
+import { canAcceptIngest, scheduleIngest } from '../../lib/ingest-queue.js'
 import { getBot } from '../bots/service.js'
 import { extractText } from './extract.js'
 import { chunkText } from './chunk.js'
@@ -41,6 +41,10 @@ export async function uploadAndIngest(
   }
 
   await assertCanUploadDoc(userId, botId, buffer.byteLength)
+
+  if (!canAcceptIngest()) {
+    throw httpError(503, 'Document processing queue is full. Please retry in a moment.')
+  }
 
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const storagePath = `${userId}/${botId}/${Date.now()}_${safeName}`
@@ -163,6 +167,10 @@ export async function retryDocument(userId: string, botId: string, documentId: s
   if (!doc) throw httpError(404, 'Document not found')
   if (doc.status !== 'failed') {
     throw httpError(400, 'Only failed documents can be retried')
+  }
+
+  if (!canAcceptIngest()) {
+    throw httpError(503, 'Document processing queue is full. Please retry in a moment.')
   }
 
   const { data: file, error: downloadError } = await supabaseAdmin.storage

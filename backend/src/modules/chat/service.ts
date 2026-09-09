@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { embedQuery, openai, CHAT_MODEL } from '../../lib/openai.js'
+import { acquireOpenAI, withOpenAI } from '../../lib/openai-gate.js'
 import { httpError } from '../../plugins/error-handler.js'
 import { consumeMessageOrThrow } from '../../lib/usage.js'
 import { getBot } from '../bots/service.js'
@@ -185,11 +186,13 @@ export async function runRagChat(opts: {
 }) {
   const prepared = await prepareRag(opts)
 
-  const completion = await openai.chat.completions.create({
-    model: CHAT_MODEL,
-    temperature: 0.2,
-    messages: prepared.llmMessages,
-  })
+  const completion = await withOpenAI(() =>
+    openai.chat.completions.create({
+      model: CHAT_MODEL,
+      temperature: 0.2,
+      messages: prepared.llmMessages,
+    }),
+  )
 
   const answer = completion.choices[0]?.message?.content?.trim() || "I couldn't generate an answer."
   await finalizeAssistant({
@@ -231,20 +234,26 @@ export async function* streamRagChat(opts: {
     sources: prepared.sources,
   }
 
-  const stream = await openai.chat.completions.create({
-    model: CHAT_MODEL,
-    temperature: 0.2,
-    stream: true,
-    messages: prepared.llmMessages,
-  })
-
+  // Hold one OpenAI slot for the lifetime of the stream
+  const releaseOpenAI = await acquireOpenAI()
   let answer = ''
-  for await (const part of stream) {
-    const delta = part.choices[0]?.delta?.content
-    if (delta) {
-      answer += delta
-      yield { type: 'token', content: delta }
+  try {
+    const stream = await openai.chat.completions.create({
+      model: CHAT_MODEL,
+      temperature: 0.2,
+      stream: true,
+      messages: prepared.llmMessages,
+    })
+
+    for await (const part of stream) {
+      const delta = part.choices[0]?.delta?.content
+      if (delta) {
+        answer += delta
+        yield { type: 'token', content: delta }
+      }
     }
+  } finally {
+    releaseOpenAI()
   }
 
   const finalAnswer = answer.trim() || "I couldn't generate an answer."

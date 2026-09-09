@@ -248,8 +248,18 @@ body {
   pointer-events: none;
 }
 
-.kb-toast-pulse {
-  animation: kb-toast-pulse 1.2s ease-in-out infinite;
+@keyframes kb-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.kb-pulse-soft {
+  animation: kb-pulse-soft 1.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -261,7 +271,8 @@ body {
   .kb-auth-copy,
   .kb-toast,
   .kb-toast-out,
-  .kb-toast-pulse {
+  .kb-toast-pulse,
+  .kb-pulse-soft {
     animation: none !important;
   }
 

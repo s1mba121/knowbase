@@ -13,7 +13,8 @@
     "dev:api": "npm run dev -w knowbase-backend",
     "build": "npm run build -w knowbase-frontend && npm run build:widget -w knowbase-frontend && npm run build -w knowbase-backend",
     "build:widget": "npm run build:widget -w knowbase-frontend",
-    "typecheck": "npm run typecheck -w knowbase-backend --if-present && npm run build -w knowbase-frontend --if-present"
+    "typecheck": "npm run typecheck -w knowbase-backend --if-present && npm run build -w knowbase-frontend --if-present",
+    "load:smoke": "node scripts/load-smoke.mjs"
   },
   "engines": {
     "node": ">=20"

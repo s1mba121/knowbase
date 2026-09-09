@@ -10,3 +10,6 @@ npm run dev
 
 Modules: `auth`, `bots`, `docs`, `chat`, `widget`, `billing`.  
 Migrations: [`supabase/migrations/`](supabase/migrations/).
+
+Ops endpoints: `GET /health`, `GET /ready`, `GET /metrics`.  
+Load smoke from repo root: `npm run load:smoke`.
