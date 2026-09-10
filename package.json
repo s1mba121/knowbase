@@ -15,7 +15,9 @@
     "build:widget": "npm run build:widget -w knowbase-frontend",
     "typecheck": "npm run typecheck -w knowbase-backend --if-present && npm run build -w knowbase-frontend --if-present",
     "load:smoke": "node scripts/load-smoke.mjs",
-    "test": "npm run test -w knowbase-backend",
+    "test": "npm run test -w knowbase-backend && npm run test -w knowbase-frontend",
+    "test:backend": "npm run test -w knowbase-backend",
+    "test:frontend": "npm run test -w knowbase-frontend",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"

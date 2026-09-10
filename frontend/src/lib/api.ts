@@ -1,19 +1,13 @@
 import { supabase } from './supabase'
+import { resolveApiBase } from './urls'
 
 /**
  * API base for fetch().
- * - VITE_API_URL set → use it (e.g. http://localhost:3001 in local Vite)
+ * - VITE_API_URL set → use it
  * - unset in DEV → localhost:3001
- * - unset/empty in production build → same-origin (nginx proxies /v1 and /widget.js)
+ * - unset/empty in production build → same-origin (nginx proxies /v1)
  */
-function resolveApiUrl(): string {
-  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim()
-  if (raw) return raw.replace(/\/$/, '')
-  if (import.meta.env.DEV) return 'http://localhost:3001'
-  return ''
-}
-
-const API_URL = resolveApiUrl()
+const API_URL = resolveApiBase(import.meta.env.VITE_API_URL as string | undefined, import.meta.env.MODE)
 
 /** Absolute origin for embed snippet / preview when API is same-origin. */
 export function getPublicApiOrigin(): string {

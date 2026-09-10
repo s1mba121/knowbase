@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Runs on the production host after CI (or manually) syncs the repo.
+# Runs on the production host after git pull (CI) or manually from repo root.
 set -euo pipefail
 
-cd /opt/knowbase
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
 # Same-origin deploy: leave public URL overrides empty (nginx proxies /v1).
 for key in FRONTEND_URL BACKEND_URL VITE_API_URL; do

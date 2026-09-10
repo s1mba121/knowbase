@@ -1,17 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
-import { z } from 'zod'
 import { getBotByPublicKey } from '../bots/service.js'
 import { runRagChat } from '../chat/service.js'
 import { getUserPlan } from '../../lib/usage.js'
 import { clientIp } from '../../plugins/error-handler.js'
 import { buildRateLimitOptions } from '../../lib/rate-limit.js'
-
-const widgetChatSchema = z.object({
-  message: z.string().min(1).max(4000),
-  conversation_id: z.string().uuid().optional().nullable(),
-  visitor_id: z.string().min(1).max(100).optional().nullable(),
-})
+import { widgetChatSchema } from './schema.js'
 
 export async function widgetRoutes(app: FastifyInstance) {
   await app.register(

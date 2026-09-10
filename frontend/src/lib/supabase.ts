@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { authRedirectTo as buildAuthRedirect } from './urls'
 
 const url = import.meta.env.VITE_SUPABASE_URL as string
 const publishable =
@@ -12,9 +13,8 @@ if (!url || !publishable) {
 
 export const supabase = createClient(url ?? '', publishable)
 
-/** Absolute app URL for Supabase Auth redirects (always current host, never baked localhost). */
+/** Absolute app URL for Supabase Auth redirects (always current host). */
 export function authRedirectTo(path = '/app'): string {
-  const normalized = path.startsWith('/') ? path : `/${path}`
-  if (typeof window === 'undefined') return normalized
-  return `${window.location.origin}${normalized}`
+  if (typeof window === 'undefined') return path.startsWith('/') ? path : `/${path}`
+  return buildAuthRedirect(window.location.origin, path)
 }

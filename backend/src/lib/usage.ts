@@ -2,6 +2,9 @@ import { supabaseAdmin } from './supabase.js'
 import { PLANS, type PlanId, type PlanLimits } from './plans.js'
 import { httpError } from '../plugins/error-handler.js'
 import { TtlCache } from './ttl-cache.js'
+import { currentMonthKey } from './month.js'
+
+export { currentMonthKey }
 
 const planCache = new TtlCache<PlanLimits>(15_000, 1000)
 
@@ -29,10 +32,6 @@ export async function getUserPlan(userId: string): Promise<PlanLimits> {
 
 export function invalidateUserPlanCache(userId: string): void {
   planCache.delete(userId)
-}
-
-export function currentMonthKey(date = new Date()): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
 export async function getMessageUsage(userId: string): Promise<number> {

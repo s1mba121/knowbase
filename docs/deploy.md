@@ -8,24 +8,44 @@ Repo → **Settings → Secrets and variables → Actions**:
 |--------|--------|
 | `DEPLOY_HOST` | `45.67.130.32` |
 | `DEPLOY_USER` | `root` |
-| `DEPLOY_SSH_KEY` | private key for deploy (ed25519) |
+| `DEPLOY_SSH_KEY` | private key for SSH into the VPS |
 
-Generate a deploy-only key (do not reuse your laptop login key if you prefer):
+Generate a deploy-only key:
 
 ```bash
 ssh-keygen -t ed25519 -f ./knowbase_deploy -N "" -C "knowbase-github-actions"
 ```
 
-- Public key → server `~/.ssh/authorized_keys`
-- Private key → GitHub secret `DEPLOY_SSH_KEY` (full file, including `BEGIN`/`END` lines)
+- Public key → VPS `~/.ssh/authorized_keys`
+- Private key → GitHub secret `DEPLOY_SSH_KEY`
 
-## What runs on push to `main`
+App path on the server is fixed: `/opt/knowbase`.
 
-1. Checkout
-2. `rsync` to `/opt/knowbase` (keeps remote `.env`)
-3. `scripts/server-deploy.sh` → `docker compose up -d --build --force-recreate web api`
+## One-time VPS setup
 
-Manual run: **Actions → Deploy → Run workflow**.
+`/opt/knowbase` must be a **git clone** of this repo (not only rsync files), with fetch access to GitHub:
+
+```bash
+# on VPS
+git clone git@github.com:<org>/<repo>.git /opt/knowbase
+# add a read-only deploy key for the repo, or use HTTPS + token
+cp /path/to/production.env /opt/knowbase/.env
+```
+
+`.env` stays on the server and is never overwritten by CI.
+
+## What runs
+
+**Every PR / push to `main`:** install → `npm test` → `npm run build`
+
+**Push to `main` only:** SSH → `git fetch` + `reset --hard origin/main` → `scripts/server-deploy.sh` (Docker rebuild + health check)
+
+```bash
+npm test
+npm run build
+```
+
+Manual: **Actions → CI → Run workflow**.
 
 ## Supabase (required for auth emails)
 
