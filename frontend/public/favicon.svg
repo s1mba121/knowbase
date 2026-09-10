@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="14" fill="#0F766E"/>
-  <path d="M18 40V24h8.2c4.4 0 7.2 2.4 7.2 6.2 0 3.8-2.8 6.2-7.2 6.2H24v3.6H18zm6-8.8h1.8c1.7 0 2.7-.8 2.7-2.2s-1-2.2-2.7-2.2H24v4.4zM36.5 40l5.2-16h6.6l5.2 16h-6.1l-.8-2.8h-5.2L40.6 40h-4.1zm8.2-7.2l-1.5-5.4-1.5 5.4h3z" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Same mark as BrandMark: teal rounded tile + K -->
+  <rect width="32" height="32" rx="8" fill="#0F766E"/>
+  <path
+    fill="#FFFFFF"
+    d="M9.5 7.5h3.6v6.7l6.2-6.7h4.4l-7.1 7.55L24.1 24.5h-4.5l-6.5-8.1v8.1H9.5V7.5z"
+  />
 </svg>
