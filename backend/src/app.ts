@@ -68,10 +68,13 @@ export async function buildApp() {
     return (req: FastifyRequest, callback: (err: Error | null, opts?: FastifyCorsOptions) => void) => {
       const url = req.url.split('?')[0] ?? ''
       if (isWidgetPath(url)) {
+        // Public embed: any customer site may call these (no cookies).
         callback(null, {
-          origin: true,
+          origin: '*',
           credentials: false,
           methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+          allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+          maxAge: 86400,
         })
         return
       }
@@ -86,6 +89,7 @@ export async function buildApp() {
         },
         credentials: true,
         methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
       })
     }
   })

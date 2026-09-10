@@ -34,7 +34,12 @@ export function requestPublicOrigin(request: FastifyRequest): string {
 
 /** Browser-facing API base for widget.js / data-api (env override or request). */
 export function apiPublicOrigin(request: FastifyRequest): string {
-  return (config.BACKEND_URL || requestPublicOrigin(request)).replace(/\/$/, '')
+  const fromEnv = config.BACKEND_URL.replace(/\/$/, '')
+  // Never bake localhost into production embed snippets.
+  if (fromEnv && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(fromEnv)) {
+    return fromEnv
+  }
+  return requestPublicOrigin(request).replace(/\/$/, '')
 }
 
 /** App UI origin for Stripe redirects / SSE (env, Origin header, or request). */

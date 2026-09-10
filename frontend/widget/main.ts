@@ -116,10 +116,19 @@ async function main() {
   if (!script) return
 
   const botKey = script.getAttribute('data-bot-key')
-  const apiBase = (script.getAttribute('data-api') || '').replace(/\/$/, '')
+  let apiBase = (script.getAttribute('data-api') || '').replace(/\/$/, '')
   if (!botKey || !apiBase) {
     console.error('[Knowbase] data-bot-key and data-api are required')
     return
+  }
+  // Stale snippets sometimes still point at localhost — recover on real sites.
+  if (
+    typeof location !== 'undefined' &&
+    location.protocol === 'https:' &&
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(apiBase)
+  ) {
+    console.warn('[Knowbase] data-api points at localhost; using', location.origin)
+    apiBase = location.origin
   }
 
   const configRes = await fetch(`${apiBase}/v1/widget/${botKey}/config`)
@@ -226,6 +235,7 @@ async function main() {
     try {
       const res = await fetch(`${apiBase}/v1/widget/${botKey}/chat`, {
         method: 'POST',
+        mode: 'cors',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
@@ -240,13 +250,16 @@ async function main() {
       messages.push({ role: 'assistant', content: data.answer, sources: data.sources })
     } catch (err) {
       const timedOut = err instanceof DOMException && err.name === 'AbortError'
+      const network = err instanceof TypeError
       messages.push({
         role: 'assistant',
         content: timedOut
           ? 'Taking too long — please try again in a moment.'
-          : err instanceof Error
-            ? err.message
-            : 'Something went wrong',
+          : network
+            ? 'Could not reach the Knowbase API (network/CORS). Check the embed data-api URL.'
+            : err instanceof Error
+              ? err.message
+              : 'Something went wrong',
       })
     } finally {
       window.clearTimeout(timer)
