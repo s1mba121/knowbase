@@ -38,16 +38,16 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          # Vite 8 / Tailwind 4: lockfile from macOS omits Linux optional natives
+          # Vite 8 / Tailwind 4: macOS lockfile often omits Linux optional natives
           case "$(uname -m)" in
             aarch64|arm64) ARCH=arm64 ;;
             *) ARCH=x64 ;;
           esac
-          npm install --no-save -w knowbase-frontend \
+          npm install --no-save --legacy-peer-deps -w knowbase-frontend \
             "@rolldown/binding-linux-${ARCH}-gnu@1.2.7" \
             "lightningcss-linux-${ARCH}-gnu@1.32.0" \
             "@tailwindcss/oxide-linux-${ARCH}-gnu@4.3.3"
-          npm install --no-save --prefix ./frontend/node_modules/vite \
+          npm install --no-save --legacy-peer-deps --prefix ./frontend/node_modules/vite \
             "lightningcss-linux-${ARCH}-gnu@1.33.0"
 
       - name: Test
