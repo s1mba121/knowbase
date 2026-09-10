@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, API_URL, unwrapPage } from '../lib/api'
+import { api, getPublicApiOrigin, unwrapPage } from '../lib/api'
 import type { Bot, DocumentRow } from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { Badge, Button, Input, TextArea } from '../components/ui'
@@ -245,7 +245,8 @@ export function BotDetailPage() {
   const readyDocs = docs.filter((d) => d.status === 'ready').length
   const indexingDocs = indexingCount
   const hasReadyDocs = readyDocs > 0
-  const previewSrc = `${window.location.origin}/embed-preview.html?key=${encodeURIComponent(bot.public_key)}&api=${encodeURIComponent(API_URL)}`
+  const apiOrigin = getPublicApiOrigin()
+  const previewSrc = `${window.location.origin}/embed-preview.html?key=${encodeURIComponent(bot.public_key)}&api=${encodeURIComponent(apiOrigin)}`
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'docs', label: 'Documents' },
@@ -462,7 +463,7 @@ export function BotDetailPage() {
                 ) : null}
               </div>
               <p className="mt-4 text-xs text-ink/40">
-                {API_URL}/widget.js · {bot.public_key}
+                {apiOrigin}/widget.js · {bot.public_key}
               </p>
             </div>
 

@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { authGuard } from '../../plugins/auth.js'
 import { createBotSchema, updateBotSchema } from './schema.js'
 import * as bots from './service.js'
-import { config } from '../../config.js'
 import { getUserPlan } from '../../lib/usage.js'
+import { apiPublicOrigin } from '../../lib/public-url.js'
 
 export async function botsRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authGuard)
@@ -37,8 +37,9 @@ export async function botsRoutes(app: FastifyInstance) {
     const { botId } = request.params as { botId: string }
     const bot = await bots.getBot(request.user.id, botId)
     const plan = await getUserPlan(request.user.id)
-    const scriptUrl = `${config.BACKEND_URL}/widget.js`
-    const snippet = `<script src="${scriptUrl}" data-bot-key="${bot.public_key}" data-api="${config.BACKEND_URL}" async></script>`
+    const apiBase = apiPublicOrigin(request)
+    const scriptUrl = `${apiBase}/widget.js`
+    const snippet = `<script src="${scriptUrl}" data-bot-key="${bot.public_key}" data-api="${apiBase}" async></script>`
     return {
       public_key: bot.public_key,
       snippet,

@@ -38,12 +38,17 @@
         <code>pk_YOUR_KEY</code> below with your published bot public key, then open the chat bubble.
       </p>
     </main>
-    <!-- Replace pk_YOUR_KEY after publishing a bot -->
-    <script
-      src="http://localhost:3001/widget.js"
-      data-bot-key="pk_YOUR_KEY"
-      data-api="http://localhost:3001"
-      async
-    ></script>
+    <!-- Replace pk_YOUR_KEY after publishing a bot. Same-origin when served from the app. -->
+    <script>
+      ;(function () {
+        const api = location.origin
+        const s = document.createElement('script')
+        s.src = api + '/widget.js'
+        s.async = true
+        s.setAttribute('data-bot-key', 'pk_YOUR_KEY')
+        s.setAttribute('data-api', api)
+        document.body.appendChild(s)
+      })()
+    </script>
   </body>
 </html>

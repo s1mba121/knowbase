@@ -4,8 +4,12 @@ import { z } from 'zod'
 const envSchema = z
   .object({
     PORT: z.coerce.number().default(3001),
-    FRONTEND_URL: z.string().default('http://localhost:5173'),
-    BACKEND_URL: z.string().default('http://localhost:3001'),
+    /** Optional. Empty = derive from request / Origin (recommended behind nginx). */
+    FRONTEND_URL: z.string().optional().default(''),
+    /** Optional. Empty = derive from X-Forwarded-* / Host (widget snippet, etc.). */
+    BACKEND_URL: z.string().optional().default(''),
+    /** Extra allowed browser origins, comma-separated. */
+    APP_ORIGINS: z.string().optional().default(''),
     SUPABASE_URL: z.string().min(1),
     // Current Supabase dashboard names
     SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
@@ -54,8 +58,9 @@ const envSchema = z
   })
   .transform((val) => ({
     PORT: val.PORT,
-    FRONTEND_URL: val.FRONTEND_URL,
-    BACKEND_URL: val.BACKEND_URL,
+    FRONTEND_URL: val.FRONTEND_URL.trim(),
+    BACKEND_URL: val.BACKEND_URL.trim(),
+    APP_ORIGINS: val.APP_ORIGINS.trim(),
     SUPABASE_URL: val.SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY: val.SUPABASE_PUBLISHABLE_KEY || val.SUPABASE_ANON_KEY || '',
     SUPABASE_SECRET_KEY: val.SUPABASE_SECRET_KEY || val.SUPABASE_SERVICE_ROLE_KEY || '',

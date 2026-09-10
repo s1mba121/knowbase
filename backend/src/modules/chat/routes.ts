@@ -1,15 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { authGuard } from '../../plugins/auth.js'
-import { config } from '../../config.js'
 import { clientIp } from '../../plugins/error-handler.js'
 import { buildRateLimitOptions } from '../../lib/rate-limit.js'
+import { appPublicOrigin, isTrustedAppOrigin } from '../../lib/public-url.js'
 import { chatSchema } from './schema.js'
 import * as chat from './service.js'
-
-const APP_ORIGINS = new Set(
-  [config.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean),
-)
 
 export async function chatRoutes(app: FastifyInstance) {
   await app.register(
@@ -57,7 +53,9 @@ export async function chatRoutes(app: FastifyInstance) {
       const body = chatSchema.parse(request.body)
       const origin = request.headers.origin
       const allowOrigin =
-        typeof origin === 'string' && APP_ORIGINS.has(origin) ? origin : config.FRONTEND_URL
+        typeof origin === 'string' && isTrustedAppOrigin(origin, request)
+          ? origin
+          : appPublicOrigin(request)
 
       reply.hijack()
       reply.raw.writeHead(200, {

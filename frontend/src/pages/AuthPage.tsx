@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, authRedirectTo } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { AuthShell } from '../components/AuthShell'
 import { Button, Input } from '../components/ui'
@@ -40,8 +40,9 @@ export function AuthPage() {
     setInfo(null)
     try {
       if (mode === 'forgot') {
-        const redirectTo = `${window.location.origin}/reset-password`
-        const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+        const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: authRedirectTo('/reset-password'),
+        })
         if (err) throw err
         setInfo('Check your email for a reset link. It may take a minute to arrive.')
         return
@@ -52,7 +53,13 @@ export function AuthPage() {
         if (err) throw err
         navigate('/app')
       } else {
-        const { data, error: err } = await supabase.auth.signUp({ email, password })
+        const { data, error: err } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: authRedirectTo('/app'),
+          },
+        })
         if (err) throw err
         if (data.session) {
           navigate('/app')

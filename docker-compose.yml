@@ -40,8 +40,9 @@ services:
     environment:
       PORT: 3001
       NODE_ENV: production
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
-      BACKEND_URL: ${BACKEND_URL:-http://localhost:3001}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      BACKEND_URL: ${BACKEND_URL:-}
+      APP_ORIGINS: ${APP_ORIGINS:-}
       INGEST_EMBEDDED_WORKER: ${INGEST_EMBEDDED_WORKER:-true}
       # Always use compose Redis unless explicitly overridden
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
@@ -75,7 +76,7 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-${SUPABASE_URL}}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}}}
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+        VITE_API_URL: ${VITE_API_URL:-}
     container_name: knowbase-web
     restart: unless-stopped
     ports:

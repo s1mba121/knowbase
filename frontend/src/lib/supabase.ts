@@ -11,3 +11,10 @@ if (!url || !publishable) {
 }
 
 export const supabase = createClient(url ?? '', publishable)
+
+/** Absolute app URL for Supabase Auth redirects (always current host, never baked localhost). */
+export function authRedirectTo(path = '/app'): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  if (typeof window === 'undefined') return normalized
+  return `${window.location.origin}${normalized}`
+}

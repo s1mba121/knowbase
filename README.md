@@ -58,7 +58,7 @@ cp frontend/.env.example frontend/.env
 
 Fill Supabase URL + **Publishable** / **Secret** keys (dashboard names; legacy anon/service_role aliases still work), and `OPENAI_API_KEY`.
 
-Frontend needs `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_API_URL=http://localhost:3001`.
+Frontend needs `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY`. For local Vite, API defaults to `http://localhost:3001`; in Docker leave `VITE_API_URL` empty (same-origin via nginx).
 
 ### 4. Run (local Node)
 

@@ -8,6 +8,7 @@ import { httpError } from '../../plugins/error-handler.js'
 import { planFromStripePrice, type PlanId, PLANS } from '../../lib/plans.js'
 import { getMessageUsage, getUserPlan, invalidateUserPlanCache } from '../../lib/usage.js'
 import { claimStripeEvent } from '../../lib/stripe-events.js'
+import { appPublicOrigin } from '../../lib/public-url.js'
 
 const checkoutSchema = z.object({
   plan: z.enum(['pro', 'business']),
@@ -94,12 +95,13 @@ export async function billingRoutes(app: FastifyInstance) {
     if (!priceId) throw httpError(503, 'Stripe price IDs are not configured')
 
     const customerId = await ensureCustomer(request.user.id, request.user.email)
+    const appOrigin = appPublicOrigin(request)
     const session = await s.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${config.FRONTEND_URL}/app/billing?success=1`,
-      cancel_url: `${config.FRONTEND_URL}/app/billing?canceled=1`,
+      success_url: `${appOrigin}/app/billing?success=1`,
+      cancel_url: `${appOrigin}/app/billing?canceled=1`,
       metadata: { user_id: request.user.id, plan: body.plan },
       subscription_data: {
         metadata: { user_id: request.user.id, plan: body.plan },
@@ -114,7 +116,7 @@ export async function billingRoutes(app: FastifyInstance) {
     const customerId = await ensureCustomer(request.user.id, request.user.email)
     const session = await s.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${config.FRONTEND_URL}/app/billing`,
+      return_url: `${appPublicOrigin(request)}/app/billing`,
     })
     return { url: session.url }
   })

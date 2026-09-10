@@ -19,12 +19,9 @@ import { docsRoutes } from './modules/docs/routes.js'
 import { chatRoutes } from './modules/chat/routes.js'
 import { widgetRoutes } from './modules/widget/routes.js'
 import { billingRoutes } from './modules/billing/routes.js'
+import { isTrustedAppOrigin } from './lib/public-url.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-
-const APP_ORIGINS = new Set(
-  [config.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean),
-)
 
 function isWidgetPath(url: string): boolean {
   return url.startsWith('/v1/widget') || url.startsWith('/widget.js')
@@ -85,7 +82,7 @@ export async function buildApp() {
             cb(null, true)
             return
           }
-          cb(null, APP_ORIGINS.has(origin))
+          cb(null, isTrustedAppOrigin(origin, req))
         },
         credentials: true,
         methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

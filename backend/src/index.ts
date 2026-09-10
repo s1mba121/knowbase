@@ -10,7 +10,7 @@ let stopIngest: (() => void) | null = null
 
 try {
   await app.listen({ port: config.PORT, host: '0.0.0.0' })
-  console.log(`Knowbase API listening on ${config.BACKEND_URL}`)
+  console.log(`Knowbase API listening on :${config.PORT}`)
 
   if (config.INGEST_EMBEDDED_WORKER) {
     stopIngest = startIngestWorker({ workerId: defaultWorkerId('api') })

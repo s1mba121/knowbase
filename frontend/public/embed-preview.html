@@ -46,7 +46,7 @@
       ;(function () {
         const params = new URLSearchParams(location.search)
         const key = params.get('key')
-        const api = (params.get('api') || 'http://localhost:3001').replace(/\/$/, '')
+        const api = (params.get('api') || location.origin).replace(/\/$/, '')
         const status = document.getElementById('status')
         if (!key || key === 'pk_YOUR_KEY') {
           status.textContent = 'Missing bot public key.'

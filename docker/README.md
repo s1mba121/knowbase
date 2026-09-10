@@ -21,6 +21,32 @@ Stack: **web + api + redis**. Supabase / OpenAI / Stripe stay external SaaS.
 
 API uses Redis for shared rate limits (`REDIS_URL=redis://redis:6379`). Check `/metrics` → `"redis": true`.
 
+## Dynamic domains
+
+Leave these empty so URLs come from the request (`Host` / `X-Forwarded-*` / `Origin`):
+
+```bash
+FRONTEND_URL=
+BACKEND_URL=
+VITE_API_URL=
+```
+
+- Browser calls `/v1/...` on the same host (nginx proxies to the API).
+- Widget snippet / Stripe redirects use the current public origin.
+- CORS allows localhost dev ports + same host as the API (+ optional `APP_ORIGINS`).
+
+Optional overrides only if web and API are on different hosts.
+
+## Production (one domain)
+
+Point the domain at the **web** container (e.g. Cloudflare → `:8080`). Rebuild after changing `VITE_*`:
+
+```bash
+docker compose up -d --build web api
+```
+
+Also add the domain in Supabase Auth → URL Configuration.
+
 ## Profiles
 
 ```bash

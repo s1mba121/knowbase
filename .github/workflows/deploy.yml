@@ -1,0 +1,48 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync files to server
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'frontend/node_modules/' \
+            --exclude 'backend/node_modules/' \
+            --exclude '.env' \
+            --exclude 'backend/.env' \
+            --exclude 'frontend/.env' \
+            --exclude '.DS_Store' \
+            --exclude 'agent-transcripts/' \
+            --exclude 'terminals/' \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/knowbase/"
+
+      - name: Rebuild and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'bash -s' < scripts/server-deploy.sh
