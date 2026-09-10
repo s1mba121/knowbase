@@ -178,10 +178,10 @@ export function LandingPage() {
             {PLANS_COPY.map((plan) => (
               <div
                 key={plan.id}
-                className={`flex flex-col rounded-2xl p-7 transition duration-300 ${
+                className={`flex flex-col rounded-2xl p-7 ${
                   plan.featured
                     ? 'bg-ink text-white shadow-2xl shadow-ink/20 lg:-translate-y-2'
-                    : 'border border-line/80 bg-white/80 hover:-translate-y-1 hover:bg-white'
+                    : 'border border-line/80 bg-white/80'
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">

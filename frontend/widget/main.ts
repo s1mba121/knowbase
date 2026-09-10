@@ -88,6 +88,29 @@ function createVisitorId(): string {
   return id
 }
 
+function iconChat(): string {
+  // Chat bubble; slight translate offsets the left/bottom tail so it looks centered in the FAB
+  return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <g transform="translate(0.75 1.1)">
+      <path
+        d="M12 3.25c4.83 0 8.75 3.2 8.75 7.15 0 3.95-3.92 7.15-8.75 7.15-.9 0-1.77-.11-2.58-.32l-3.92 1.77.95-3.55C4.4 14.05 3.25 12.35 3.25 10.4c0-3.95 3.92-7.15 8.75-7.15Z"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linejoin="round"
+      />
+      <circle cx="8.75" cy="10.4" r="1.15" fill="currentColor"/>
+      <circle cx="12" cy="10.4" r="1.15" fill="currentColor"/>
+      <circle cx="15.25" cy="10.4" r="1.15" fill="currentColor"/>
+    </g>
+  </svg>`
+}
+
+function iconClose(): string {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>`
+}
+
 async function main() {
   const script = getScriptEl()
   if (!script) return
@@ -118,8 +141,14 @@ async function main() {
     .kb-btn {
       position: fixed; right: 20px; bottom: 20px; z-index: 2147483000;
       width: 56px; height: 56px; border-radius: 999px; border: none; cursor: pointer;
-      color: #fff; font-size: 22px; box-shadow: 0 12px 30px rgba(0,0,0,.22);
+      color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.22);
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0; line-height: 0;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
+    .kb-btn:hover { transform: translateY(-1px); box-shadow: 0 16px 34px rgba(0,0,0,.26); }
+    .kb-btn:active { transform: translateY(0); }
+    .kb-btn svg { width: 24px; height: 24px; display: block; flex-shrink: 0; }
     .kb-panel {
       position: fixed; right: 20px; bottom: 88px; z-index: 2147483000;
       width: min(380px, calc(100vw - 24px)); height: min(560px, calc(100vh - 120px));
@@ -149,10 +178,28 @@ async function main() {
       padding: 6px 10px; font-size: 11px; cursor: pointer; line-height: 1.2;
     }
     .kb-sug:hover { border-color: var(--kb); color: #000; }
+    .kb-sug:disabled { opacity: 0.5; cursor: default; }
+    .kb-typing {
+      margin-right: auto; background: #fff; color: #567; border: 1px solid #e4ebe8;
+      display: flex; align-items: center; gap: 5px; padding: 12px 14px; min-height: 18px;
+    }
+    .kb-typing-dot {
+      width: 6px; height: 6px; border-radius: 999px; background: rgba(12, 26, 23, 0.45);
+      animation: kb-typing 1.15s infinite;
+    }
+    .kb-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .kb-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes kb-typing {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-3px); }
+    }
+    .kb-form button:disabled { opacity: 0.6; cursor: wait; }
+    .kb-form input:disabled { opacity: 0.7; }
   `
   document.head.appendChild(style)
 
   let open = false
+  let pending = false
   let conversationId: string | null = null
   const messages: Msg[] = [{ role: 'assistant', content: config.welcome_message }]
 
@@ -160,7 +207,7 @@ async function main() {
   btn.className = 'kb-btn'
   btn.style.background = config.primary_color
   btn.setAttribute('aria-label', 'Open chat')
-  btn.textContent = '💬'
+  btn.innerHTML = iconChat()
   root.appendChild(btn)
 
   const panel = document.createElement('div')
@@ -170,13 +217,17 @@ async function main() {
   root.appendChild(panel)
 
   async function ask(text: string) {
-    if (!text.trim()) return
+    if (!text.trim() || pending) return
+    pending = true
     messages.push({ role: 'user', content: text.trim() })
     render()
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 60_000)
     try {
       const res = await fetch(`${apiBase}/v1/widget/${botKey}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           message: text.trim(),
           conversation_id: conversationId,
@@ -188,12 +239,20 @@ async function main() {
       conversationId = data.conversation_id
       messages.push({ role: 'assistant', content: data.answer, sources: data.sources })
     } catch (err) {
+      const timedOut = err instanceof DOMException && err.name === 'AbortError'
       messages.push({
         role: 'assistant',
-        content: err instanceof Error ? err.message : 'Something went wrong',
+        content: timedOut
+          ? 'Taking too long — please try again in a moment.'
+          : err instanceof Error
+            ? err.message
+            : 'Something went wrong',
       })
+    } finally {
+      window.clearTimeout(timer)
+      pending = false
+      render()
     }
-    render()
   }
 
   function render() {
@@ -226,8 +285,20 @@ async function main() {
       body.appendChild(el)
     })
 
+    if (pending) {
+      const typing = document.createElement('div')
+      typing.className = 'kb-msg kb-typing'
+      typing.setAttribute('aria-label', 'Assistant is typing')
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement('span')
+        dot.className = 'kb-typing-dot'
+        typing.appendChild(dot)
+      }
+      body.appendChild(typing)
+    }
+
     const onlyWelcome = messages.length === 1 && messages[0]?.role === 'assistant'
-    if (onlyWelcome && config.suggestions?.length) {
+    if (onlyWelcome && !pending && config.suggestions?.length) {
       const sugs = document.createElement('div')
       sugs.className = 'kb-sugs'
       config.suggestions.slice(0, 3).forEach((q) => {
@@ -235,6 +306,7 @@ async function main() {
         b.type = 'button'
         b.className = 'kb-sug'
         b.textContent = q
+        b.disabled = pending
         b.addEventListener('click', () => void ask(q))
         sugs.appendChild(b)
       })
@@ -254,9 +326,11 @@ async function main() {
     form.className = 'kb-form'
     const input = document.createElement('input')
     input.placeholder = 'Ask a question…'
+    input.disabled = pending
     const send = document.createElement('button')
     send.type = 'submit'
-    send.textContent = 'Send'
+    send.textContent = pending ? '…' : 'Send'
+    send.disabled = pending
     form.append(input, send)
     form.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -267,12 +341,14 @@ async function main() {
     })
     panel.appendChild(form)
     body.scrollTop = body.scrollHeight
+    if (!pending) input.focus()
   }
 
   btn.addEventListener('click', () => {
     open = !open
     panel.style.display = open ? 'flex' : 'none'
-    btn.textContent = open ? '✕' : '💬'
+    btn.innerHTML = open ? iconClose() : iconChat()
+    btn.setAttribute('aria-label', open ? 'Close chat' : 'Open chat')
     if (open) render()
   })
 }

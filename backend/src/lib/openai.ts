@@ -3,7 +3,11 @@ import { config } from '../config.js'
 import { withOpenAI } from './openai-gate.js'
 import { withRetry } from './retry.js'
 
-export const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY })
+export const openai = new OpenAI({
+  apiKey: config.OPENAI_API_KEY,
+  timeout: 60_000,
+  maxRetries: 0, // retries handled by withRetry
+})
 
 export const EMBEDDING_MODEL = 'text-embedding-3-small'
 export const CHAT_MODEL = 'gpt-4o-mini'

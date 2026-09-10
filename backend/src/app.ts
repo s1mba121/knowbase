@@ -62,6 +62,8 @@ export async function buildApp() {
   await app.register(helmet, {
     global: true,
     contentSecurityPolicy: false,
+    // Widget is loaded cross-origin from customer sites + Embed preview (web ≠ api origin).
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 
   // Single CORS registration (avoids duplicate OPTIONS *); policy depends on path

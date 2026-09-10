@@ -15,7 +15,18 @@ COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY frontend/package.json ./frontend/
 
-RUN npm ci
+# Vite 8 / Tailwind 4: macOS lockfile often omits Linux optional native bindings (npm#4828).
+RUN npm ci \
+  && case "$(uname -m)" in \
+       aarch64|arm64) ARCH=arm64 ;; \
+       *) ARCH=x64 ;; \
+     esac \
+  && npm install --no-save -w knowbase-frontend \
+       "@rolldown/binding-linux-${ARCH}-gnu@1.2.7" \
+       "lightningcss-linux-${ARCH}-gnu@1.32.0" \
+       "@tailwindcss/oxide-linux-${ARCH}-gnu@4.3.3" \
+  && npm install --no-save --prefix ./frontend/node_modules/vite \
+       "lightningcss-linux-${ARCH}-gnu@1.33.0"
 
 COPY frontend ./frontend
 
