@@ -15,8 +15,8 @@ services:
     image: redis:7-alpine
     container_name: knowbase-redis
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # ports:
+      # - "${REDIS_PORT:-6379}:6379"
     volumes:
       - knowbase_redis:/data
     healthcheck:
@@ -32,8 +32,8 @@ services:
       dockerfile: Dockerfile.api
     container_name: knowbase-api
     restart: unless-stopped
-    ports:
-      - "${API_PORT:-3001}:3001"
+    # ports:
+      # - "${API_PORT:-3001}:3001"
     env_file:
       - path: .env
         required: false
@@ -80,7 +80,7 @@ services:
     container_name: knowbase-web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
