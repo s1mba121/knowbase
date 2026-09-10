@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -6,10 +6,41 @@ import { PLANS_COPY } from '../lib/pricing'
 import { Badge, Button } from '../components/ui'
 
 export function BillingPage() {
-  const { me } = useAuth()
+  const { me, refreshMe } = useAuth()
   const [params] = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [syncNote, setSyncNote] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (params.get('success') !== '1') return
+    let cancelled = false
+    ;(async () => {
+      try {
+        setBusy('sync')
+        const result = await api<{ plan: string; status: string }>('/v1/billing/sync', {
+          method: 'POST',
+        })
+        await refreshMe()
+        if (!cancelled) {
+          setSyncNote(
+            result.plan === 'free'
+              ? 'Payment received. If your plan is still Free, open Manage billing or retry in a moment.'
+              : `Plan synced: ${result.plan}.`,
+          )
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not sync subscription')
+        }
+      } finally {
+        if (!cancelled) setBusy(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [params, refreshMe])
 
   async function checkout(plan: 'pro' | 'business') {
     setBusy(plan)
@@ -56,7 +87,10 @@ export function BillingPage() {
 
       {params.get('success') ? (
         <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Subscription updated. It may take a few seconds for webhooks to sync.
+          {syncNote ??
+            (busy === 'sync'
+              ? 'Payment received — syncing your plan…'
+              : 'Subscription updated. It may take a few seconds for webhooks to sync.')}
         </p>
       ) : null}
       {params.get('canceled') ? (
@@ -78,11 +112,34 @@ export function BillingPage() {
                 <Badge tone={onPaid ? 'ok' : 'neutral'}>{onPaid ? 'Paid' : 'Free'}</Badge>
               </div>
             </div>
-            {onPaid ? (
-              <Button variant="secondary" onClick={() => void portal()} disabled={busy === 'portal'}>
-                {busy === 'portal' ? 'Opening…' : 'Manage in Stripe'}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void (async () => {
+                    setBusy('sync')
+                    setError(null)
+                    try {
+                      const result = await api<{ plan: string }>('/v1/billing/sync', { method: 'POST' })
+                      await refreshMe()
+                      setSyncNote(`Plan synced: ${result.plan}.`)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Sync failed')
+                    } finally {
+                      setBusy(null)
+                    }
+                  })()
+                }}
+                disabled={busy === 'sync'}
+              >
+                {busy === 'sync' ? 'Syncing…' : 'Sync plan'}
               </Button>
-            ) : null}
+              {onPaid ? (
+                <Button variant="secondary" onClick={() => void portal()} disabled={busy === 'portal'}>
+                  {busy === 'portal' ? 'Opening…' : 'Manage in Stripe'}
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="mt-6">
             <div className="mb-2 flex justify-between text-xs text-ink/55">

@@ -64,10 +64,16 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    const message =
+    const raw =
       typeof data === 'object' && data && 'error' in data
         ? String((data as { error: unknown }).error)
         : res.statusText || 'Request failed'
+    const message =
+      res.status === 502 || /<!DOCTYPE html>/i.test(raw)
+        ? 'Server gateway timeout — please retry checkout in a moment.'
+        : raw.length > 280
+          ? `${raw.slice(0, 280)}…`
+          : raw
     throw new ApiError(res.status, message)
   }
   return data as T

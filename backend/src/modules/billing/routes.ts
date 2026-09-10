@@ -68,6 +68,53 @@ async function upsertSubscription(opts: {
   invalidateUserPlanCache(opts.userId)
 }
 
+function resolvePlanFromPriceAndMeta(
+  priceId: string,
+  metaPlan: string | null | undefined,
+): PlanId {
+  const fromPrice = planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
+  if (fromPrice !== 'free') return fromPrice
+  if (metaPlan === 'pro' || metaPlan === 'business') return metaPlan
+  return 'free'
+}
+
+/** Pull active Stripe subscription for this user and mirror it locally (webhook backup). */
+async function syncUserSubscriptionFromStripe(userId: string, email: string) {
+  const s = requireStripe()
+  const customerId = await ensureCustomer(userId, email)
+  const subs = await s.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 10,
+  })
+  const active =
+    subs.data.find((sub) => sub.status === 'active' || sub.status === 'trialing') ||
+    subs.data.find((sub) => sub.status === 'past_due') ||
+    null
+
+  if (!active) {
+    await upsertSubscription({
+      userId,
+      customerId,
+      subscriptionId: null,
+      plan: 'free',
+      status: 'active',
+    })
+    return { plan: 'free' as PlanId, status: 'active' }
+  }
+
+  const priceId = active.items.data[0]?.price?.id ?? ''
+  const plan = resolvePlanFromPriceAndMeta(priceId, active.metadata?.plan)
+  await upsertSubscription({
+    userId,
+    customerId,
+    subscriptionId: active.id,
+    plan,
+    status: active.status,
+  })
+  return { plan, status: active.status }
+}
+
 export async function billingRoutes(app: FastifyInstance) {
   app.get('/plans', async () => Object.values(PLANS))
 
@@ -95,7 +142,8 @@ export async function billingRoutes(app: FastifyInstance) {
     if (!priceId) throw httpError(503, 'Stripe price IDs are not configured')
 
     const customerId = await ensureCustomer(request.user.id, request.user.email)
-    const appOrigin = appPublicOrigin(request)
+    // Stripe rejects non-HTTPS return URLs for public hosts; never emit http:// from bad proxies.
+    const appOrigin = appPublicOrigin(request).replace(/^http:\/\//i, 'https://')
     const session = await s.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
@@ -116,9 +164,16 @@ export async function billingRoutes(app: FastifyInstance) {
     const customerId = await ensureCustomer(request.user.id, request.user.email)
     const session = await s.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${appPublicOrigin(request)}/app/billing`,
+      return_url: `${appPublicOrigin(request).replace(/^http:\/\//i, 'https://')}/app/billing`,
     })
     return { url: session.url }
+  })
+
+  /** After Checkout success — sync plan without waiting for webhook. */
+  app.post('/sync', { preHandler: authGuard }, async (request) => {
+    const result = await syncUserSubscriptionFromStripe(request.user.id, request.user.email)
+    const plan = await getUserPlan(request.user.id)
+    return { ...result, limits: plan }
   })
 
   app.post('/webhook', { config: { rawBody: true } }, async (request, reply) => {
@@ -157,20 +212,22 @@ export async function billingRoutes(app: FastifyInstance) {
           try {
             const sub = await stripe.subscriptions.retrieve(session.subscription)
             const priceId = sub.items.data[0]?.price?.id ?? ''
-            plan = planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
-          } catch {
-            // fall through
+            plan = resolvePlanFromPriceAndMeta(priceId, session.metadata?.plan)
+          } catch (err) {
+            request.log.warn({ err, requestId: request.id }, 'stripe subscription retrieve failed')
           }
         }
-        // Local demos without price IDs may still set metadata.plan
+        // Prefer metadata.plan when price map misses (misconfigured price ids, etc.)
         if (
           plan === 'free' &&
-          !config.STRIPE_PRICE_PRO &&
-          !config.STRIPE_PRICE_BUSINESS &&
           (session.metadata?.plan === 'pro' || session.metadata?.plan === 'business')
         ) {
           plan = session.metadata.plan as PlanId
         }
+        request.log.info(
+          { userId, plan, subscription: session.subscription, requestId: request.id },
+          'checkout.session.completed',
+        )
         if (userId && plan !== 'free') {
           await upsertSubscription({
             userId,
@@ -179,8 +236,11 @@ export async function billingRoutes(app: FastifyInstance) {
             plan,
             status: 'active',
           })
-        } else if (userId && plan === 'free') {
-          // Still mark active free if we couldn't map a paid price
+        } else if (userId) {
+          request.log.warn(
+            { userId, plan, requestId: request.id },
+            'checkout completed but plan stayed free',
+          )
           await upsertSubscription({
             userId,
             customerId: typeof session.customer === 'string' ? session.customer : null,
@@ -188,16 +248,27 @@ export async function billingRoutes(app: FastifyInstance) {
             plan: 'free',
             status: 'active',
           })
+        } else {
+          request.log.warn({ requestId: request.id }, 'checkout.session.completed missing user_id metadata')
         }
         break
       }
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const sub = event.data.object
-        const userId = sub.metadata?.user_id
+        let userId = sub.metadata?.user_id
         const priceId = sub.items.data[0]?.price?.id ?? ''
-        const plan = planFromStripePrice(priceId, config.STRIPE_PRICE_PRO, config.STRIPE_PRICE_BUSINESS)
+        let plan = resolvePlanFromPriceAndMeta(priceId, sub.metadata?.plan)
         const statusOk = sub.status === 'active' || sub.status === 'trialing'
+        // Resolve user via customer id when subscription metadata is missing
+        if (!userId && typeof sub.customer === 'string') {
+          const { data: row } = await supabaseAdmin
+            .from('subscriptions')
+            .select('user_id')
+            .eq('stripe_customer_id', sub.customer)
+            .maybeSingle()
+          userId = row?.user_id ?? undefined
+        }
         if (userId) {
           await upsertSubscription({
             userId,
@@ -206,6 +277,11 @@ export async function billingRoutes(app: FastifyInstance) {
             plan: event.type === 'customer.subscription.deleted' || !statusOk ? 'free' : plan,
             status: event.type === 'customer.subscription.deleted' ? 'canceled' : sub.status,
           })
+        } else {
+          request.log.warn(
+            { subscriptionId: sub.id, requestId: request.id },
+            'subscription event missing user mapping',
+          )
         }
         break
       }
