@@ -23,6 +23,26 @@ test('requestPublicOrigin uses forwarded headers', () => {
   assert.equal(origin, 'https://knowbase.example.com')
 })
 
+test('requestPublicOrigin upgrades http proto for public hosts', () => {
+  const origin = requestPublicOrigin(
+    fakeReq({
+      'x-forwarded-proto': 'http',
+      host: 'knowbase.sudohomelab.dpdns.org',
+    }),
+  )
+  assert.equal(origin, 'https://knowbase.sudohomelab.dpdns.org')
+})
+
+test('requestPublicOrigin keeps http for localhost', () => {
+  const origin = requestPublicOrigin(
+    fakeReq({
+      'x-forwarded-proto': 'http',
+      host: 'localhost:8080',
+    }),
+  )
+  assert.equal(origin, 'http://localhost:8080')
+})
+
 test('apiPublicOrigin falls back to request origin', () => {
   const origin = apiPublicOrigin(
     fakeReq({

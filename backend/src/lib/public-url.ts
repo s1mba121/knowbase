@@ -14,6 +14,10 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
   return raw?.split(',')[0]?.trim() || undefined
 }
 
+function isLocalHost(host: string): boolean {
+  return /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host)
+}
+
 /** Host the client used to reach us (Cloudflare / nginx → X-Forwarded-Host). */
 export function requestPublicHost(request: FastifyRequest): string | undefined {
   return (
@@ -22,14 +26,31 @@ export function requestPublicHost(request: FastifyRequest): string | undefined {
   )
 }
 
+function requestPublicProto(request: FastifyRequest): string {
+  const forwarded = firstHeader(request.headers['x-forwarded-proto'])?.toLowerCase()
+  if (forwarded === 'https' || forwarded === 'http') {
+    // Inner proxies sometimes overwrite proto with http — prefer browser Origin when https.
+    if (forwarded === 'http') {
+      const origin = request.headers.origin
+      if (typeof origin === 'string' && origin.startsWith('https://')) return 'https'
+      const host = requestPublicHost(request)
+      if (host && !isLocalHost(host)) return 'https'
+    }
+    return forwarded
+  }
+  if (request.protocol === 'https') return 'https'
+  const origin = request.headers.origin
+  if (typeof origin === 'string' && origin.startsWith('https://')) return 'https'
+  const host = requestPublicHost(request)
+  if (host && !isLocalHost(host)) return 'https'
+  return 'http'
+}
+
 /** Public origin of this API hop (proto + host), derived from proxy headers. */
 export function requestPublicOrigin(request: FastifyRequest): string {
   const host = requestPublicHost(request)
   if (!host) return config.BACKEND_URL || 'http://localhost:3001'
-  const proto =
-    firstHeader(request.headers['x-forwarded-proto']) ||
-    (request.protocol === 'https' ? 'https' : 'http')
-  return `${proto}://${host}`
+  return `${requestPublicProto(request)}://${host}`
 }
 
 /** Browser-facing API base for widget.js / data-api (env override or request). */
