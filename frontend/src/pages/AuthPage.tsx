@@ -21,6 +21,8 @@ export function AuthPage() {
     const params = new URLSearchParams(window.location.search)
     if (params.get('mode') === 'signup') setMode('signup')
     if (params.get('mode') === 'forgot') setMode('forgot')
+    const urlError = params.get('error')
+    if (urlError) setError(urlError)
   }, [])
 
   if (!loading && session && mode !== 'forgot') {

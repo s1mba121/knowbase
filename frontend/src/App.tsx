@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './lib/auth'
 import { RequireAuth } from './components/RequireAuth'
+import { AuthUrlErrorHandler } from './components/AuthUrlErrorHandler'
 import { AppLayout } from './components/AppLayout'
 import { ToastProvider } from './components/Toast'
 import { LandingPage } from './pages/LandingPage'
@@ -15,6 +16,7 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
+          <AuthUrlErrorHandler />
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/auth" element={<AuthPage />} />

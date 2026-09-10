@@ -47,6 +47,18 @@ npm run build
 
 Manual: **Actions → CI → Run workflow**.
 
+## Host nginx (VPS)
+
+Public TLS terminates on Ubuntu nginx → `127.0.0.1:4001` (Docker `web`).  
+Upload limit must allow the API multipart cap (20MB):
+
+```nginx
+# in server { server_name knowbase.sudohomelab.dpdns.org; ... }
+client_max_body_size 25m;
+```
+
+Also set in `docker/nginx.conf` inside the web container.
+
 ## Supabase (required for auth emails)
 
 **Authentication → URL Configuration**
