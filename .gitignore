@@ -33,3 +33,6 @@ coverage/
 .turbo/
 *.tsbuildinfo
 .keys/
+
+# Space CLI (unused; deploy via GitHub Actions)
+.space.json
